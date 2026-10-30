@@ -8,7 +8,7 @@
   --card: #faf3e6;      /* soft cream - card backgrounds */
   --bd: #d4c3a8;        /* faded bronze - borders */
   --red: #8b4513;       /* saddle brown for danger (coffee-toned) */
-  --mut: #8c7a65;       /* muted brown-gray */
+  --mut: #6e5e4e;       /* muted brown-gray - WCAG AA compliant */
   --ink: #2e2118;       /* deepest espresso for headings */
 }
 
@@ -185,8 +185,8 @@ h2 {
   gap: 14px;
 }
 .warn {
-  padding: 12px 15px;
-  border-left: 5px solid #a67c52;
+  padding: 14px 18px;
+  border: 1px solid var(--bd);
   background: #f3e5d0;
   border-radius: 10px;
   margin-bottom: 14px;
@@ -205,7 +205,7 @@ table {
 }
 th,
 td {
-  padding: 11px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--bd);
   text-align: left;
 }
@@ -616,10 +616,7 @@ body.off #offbar {
 }
 .hero h1 {
   letter-spacing: -0.03em;
-  background: linear-gradient(120deg, var(--ink) 40%, var(--pri));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--ink);
 }
 .card {
   position: relative;
