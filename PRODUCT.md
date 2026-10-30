@@ -31,9 +31,10 @@ A browser-based healthcare access tool backed by a portable C HTTP server (`serv
 **Secondary: Persuade** — the hero section earns trust and action ("Say what's wrong. We'll send help.").
 
 ## How to start
-- **Linux/macOS:** `./start.sh` (compiles `server.c`, starts SQLite server, opens `http://localhost:8080`)
-- **Windows:** `start.bat` (compiles `server.c`, starts SQLite server, opens `http://localhost:8080`)
-- **Manual:** `gcc server.c -o gramcare -lsqlite3 -lpthread -lm -ldl && ./gramcare`
+- **Linux/macOS:** `./start.sh` (compiles `server.c`, starts server, opens `http://localhost:8080`)
+- **Windows:** `start.bat` (compiles `server.c`, starts server, opens `http://localhost:8080`)
+- **Manual:** `gcc server.c -o gramcare.exe -lws2_32 && ./gramcare.exe`
+- Starts with **no demo patients** — ready for a new user
 
 
 ## Current design direction (this session)
