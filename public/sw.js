@@ -1,4 +1,4 @@
-const V = "gc-v3",
+const V = "gc-v4",
   CORE = [
     "/index.html",
     "/style.css",

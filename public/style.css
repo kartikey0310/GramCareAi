@@ -374,9 +374,31 @@ body.off #offbar {
   flex: 1;
   min-width: 180px;
 }
+.flash-input {
+  border-color: var(--pri) !important;
+  box-shadow: 0 0 0 3px rgba(139, 69, 19, 0.35) !important;
+  transition: all 0.25s ease-in-out;
+}
+.btn.sm {
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+}
 .heard {
   min-height: 24px;
   font-style: italic;
+}
+.tsaved {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pri);
+  background: #f3e5d0;
+  border: 1px solid var(--bd);
+  padding: 5px 14px;
+  border-radius: 999px;
+  margin: 6px auto;
+  animation: pop 0.25s ease;
 }
 .chips {
   display: flex;

@@ -272,11 +272,187 @@ function handle(t) {
     else $("cd").textContent = n;
   }, 1000);
 }
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-$("mic").onclick = () => {
+/* ---- Sarvam AI Indic Speech-to-Text Voice Integration ---- */
+let mediaRecorder = null;
+let audioChunks = [];
+let audioStream = null;
+let isRecording = false;
+let recTimer = null;
+
+function configureSarvamKey() {
+  const current = LS.gc_sarvam_key || "";
+  const key = prompt(
+    "Enter your Sarvam AI API subscription key (stored in this browser):\n(Or set SARVAM_API_KEY in the server .env file)",
+    current,
+  );
+  if (key !== null) {
+    if (key.trim()) {
+      LS.gc_sarvam_key = key.trim();
+      toast("Sarvam AI key saved for this browser");
+      $("vmsg").textContent = "Sarvam AI key configured! Tap the mic to speak.";
+    } else {
+      delete LS.gc_sarvam_key;
+      toast("Sarvam AI browser key cleared (server .env will be used)");
+    }
+  }
+}
+if ($("sarvamKeyBtn")) $("sarvamKeyBtn").onclick = configureSarvamKey;
+
+async function startRecording() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    fallbackSpeechRecognition();
+    return;
+  }
+
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+
+    const supportedTypes = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+      "audio/wav",
+    ];
+    const mimeType =
+      supportedTypes.find((t) => MediaRecorder.isTypeSupported(t)) ||
+      "audio/webm";
+
+    mediaRecorder = new MediaRecorder(audioStream, { mimeType });
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstart = () => {
+      isRecording = true;
+      $("mic").classList.add("on");
+      const langName = $("vl").value === "hi-IN" ? "Hindi (हिन्दी)" : "English";
+      $("vmsg").textContent = `🎙️ Listening… Speak in ${langName}. Tap mic when done.`;
+      $("heard").textContent = "Listening…";
+
+      // Safety timeout: stop automatically after 8 seconds
+      clearTimeout(recTimer);
+      recTimer = setTimeout(() => {
+        if (isRecording) stopRecording();
+      }, 8000);
+    };
+
+    mediaRecorder.onstop = async () => {
+      isRecording = false;
+      clearTimeout(recTimer);
+      $("mic").classList.remove("on");
+
+      if (audioStream) {
+        audioStream.getTracks().forEach((track) => track.stop());
+        audioStream = null;
+      }
+
+      if (!audioChunks.length) {
+        $("vmsg").textContent = "No audio captured. Please try speaking again.";
+        return;
+      }
+
+      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      await transcribeWithSarvam(audioBlob, mimeType);
+    };
+
+    mediaRecorder.start(250);
+  } catch (err) {
+    console.warn("Microphone access error:", err);
+    if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      $("vmsg").textContent =
+        "Microphone access blocked. Please allow mic access in browser settings.";
+    } else {
+      $("vmsg").textContent = "Microphone error: " + (err.message || err);
+      fallbackSpeechRecognition();
+    }
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    mediaRecorder.stop();
+  }
+}
+
+async function transcribeWithSarvam(blob, mimeType) {
+  if (!online()) {
+    $("vmsg").textContent =
+      "You are offline. Type what happened or use quick buttons.";
+    toast("Voice transcription requires network. Typed input works offline.");
+    return;
+  }
+
+  $("vmsg").textContent = "⚡ Transcribing speech with Sarvam AI…";
+
+  try {
+    const lang = $("vl").value || "hi-IN";
+    const headers = { "Content-Type": mimeType };
+    if (LS.gc_sarvam_key) {
+      headers["X-Sarvam-Key"] = LS.gc_sarvam_key;
+    }
+
+    const res = await fetch(`/api/transcribe?lang=${encodeURIComponent(lang)}`, {
+      method: "POST",
+      headers,
+      body: blob,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      const errMsg =
+        data.error ||
+        (data.detail && JSON.stringify(data.detail)) ||
+        "Failed to transcribe";
+      if (errMsg.includes("SARVAM_API_KEY")) {
+        $("vmsg").innerHTML = `⚠️ ${errMsg} <button class="btn alt sm" id="setKeyPrompt" style="padding:2px 8px;margin-left:6px">Set Key</button>`;
+        const promptBtn = $("setKeyPrompt");
+        if (promptBtn) promptBtn.onclick = configureSarvamKey;
+      } else {
+        $("vmsg").textContent = "Sarvam AI: " + errMsg;
+      }
+      return;
+    }
+
+    const text = (data.transcript || "").trim();
+    if (text) {
+      // 1. Automatically populate speech into the text section input box
+      $("typed").value = text;
+      $("heard").textContent = "“" + text + "”";
+
+      // Visual feedback pulse
+      $("typed").classList.add("flash-input");
+      setTimeout(() => $("typed").classList.remove("flash-input"), 1400);
+
+      const dbInfo = data.db_id ? ` (Saved to DB #${data.db_id})` : " (Saved to DB)";
+      $("vmsg").textContent = `✅ Transcribed by Sarvam AI: “${text}”${dbInfo}`;
+      if ($("tSaved")) {
+        $("tSaved").hidden = false;
+        $("tSaved").innerHTML = `💾 Transcript automatically saved to database <b>${data.db_id ? '#' + data.db_id : ''}</b>`;
+      }
+      toast(`Transcribed & saved to database ${data.db_id ? '#' + data.db_id : ''}`);
+
+      // 2. Automatically trigger emergency triage workflow
+      handle(text);
+    } else {
+      $("vmsg").textContent =
+        "Could not detect clear speech. Please try speaking again.";
+    }
+  } catch (err) {
+    console.error("Transcription error:", err);
+    $("vmsg").textContent =
+      "Transcription error: " + err.message + ". Try typing below.";
+  }
+}
+
+function fallbackSpeechRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
     $("vmsg").textContent =
-      "Voice is not supported in this browser. Type below or tap a button.";
+      "Voice is not supported in this browser. Please type what happened.";
     return;
   }
   const r = new SR();
@@ -284,22 +460,39 @@ $("mic").onclick = () => {
   r.interimResults = true;
   r.onstart = () => {
     $("mic").classList.add("on");
-    $("vmsg").textContent = "Listening…";
+    $("vmsg").textContent = "Listening (browser speech)…";
   };
   r.onend = () => $("mic").classList.remove("on");
-  r.onresult = (e) => {
+  r.onresult = async (e) => {
     const t = [...e.results].map((x) => x[0].transcript).join(" ");
+    $("typed").value = t;
     $("heard").textContent = "“" + t + "”";
-    if (e.results[e.results.length - 1].isFinal) handle(t);
+    if (e.results[e.results.length - 1].isFinal) {
+      try {
+        const res = await api("/api/transcripts", {
+          method: "POST",
+          body: JSON.stringify({ transcript: t, language: $("vl").value }),
+        });
+        if (res && res.id && $("tSaved")) {
+          $("tSaved").hidden = false;
+          $("tSaved").innerHTML = `💾 Saved to database <b>#${res.id}</b>`;
+        }
+      } catch {}
+      handle(t);
+    }
   };
-  r.onerror = (e) =>
-    ($("vmsg").textContent =
-      e.error === "network"
-        ? "Voice needs internet in this browser. Tap a button instead: your request is saved and sent when you are back online."
-        : e.error === "not-allowed"
-          ? "Allow microphone access to speak."
-          : "Could not hear you. Try again.");
+  r.onerror = (e) => {
+    $("vmsg").textContent = "Browser speech error: " + (e.error || "unknown");
+  };
   r.start();
+}
+
+$("mic").onclick = () => {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
 };
 document.querySelectorAll(".chips button").forEach(
   (b) =>
@@ -308,10 +501,20 @@ document.querySelectorAll(".chips button").forEach(
       handle(b.dataset.t);
     }),
 );
-$("typedGo").onclick = () => {
+$("typedGo").onclick = async () => {
   const t = $("typed").value.trim();
   if (t) {
     $("heard").textContent = "“" + t + "”";
+    try {
+      const res = await api("/api/transcripts", {
+        method: "POST",
+        body: JSON.stringify({ transcript: t, language: $("vl").value }),
+      });
+      if (res && res.id && $("tSaved")) {
+        $("tSaved").hidden = false;
+        $("tSaved").innerHTML = `💾 Text saved to database <b>#${res.id}</b>`;
+      }
+    } catch {}
     handle(t);
   }
 };

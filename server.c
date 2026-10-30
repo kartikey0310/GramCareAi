@@ -6,6 +6,8 @@
 #pragma comment(lib,"ws2_32.lib")
 typedef SOCKET sock_t;
 #define CLOSESOCK closesocket
+#define popen _popen
+#define pclose _pclose
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -28,6 +30,7 @@ typedef int sock_t;
 #define MAX_VITALS 500
 #define MAX_ALERTS 200
 #define MAX_MEDICINES 50
+#define MAX_TRANSCRIPTS 200
 
 typedef struct { char id[20], name[80], village[80], mobile[20], flag[16]; int age; } Patient;
 static Patient patients[MAX_PATIENTS]; static int patient_count=0;
@@ -41,6 +44,9 @@ static Alert alerts[MAX_ALERTS]; static int alert_count=0;
 typedef struct { char name[80], category[60]; int price; int rx; } Medicine;
 static Medicine medicines[MAX_MEDICINES]; static int medicine_count=0;
 
+typedef struct { int id; char transcript[1024]; char language[32]; char created_at[32]; } VoiceTranscript;
+static VoiceTranscript voice_transcripts[MAX_TRANSCRIPTS]; static int voice_transcript_count=0;
+
 static void seed_medicines(void){
     Medicine m[]={
         {"Paracetamol 500 mg","Fever & pain",24,0},
@@ -49,6 +55,114 @@ static void seed_medicines(void){
         {"Pulse Oximeter","Devices",899,0},
         {"Amoxicillin","Prescription only",120,1}};
     memcpy(medicines,m,sizeof(m)); medicine_count=5;
+}
+
+/* ---- HTTP parsing & Sarvam config helpers ---- */
+static long get_content_len(const char* b) {
+    const char* p = strstr(b, "Content-Length:");
+    if (!p) p = strstr(b, "content-length:");
+    if (!p) return 0;
+    return atol(p + 15);
+}
+static void get_header_str(const char* headers, const char* name, char* out, size_t max_len) {
+    out[0] = 0;
+    char pat[80];
+    snprintf(pat, sizeof pat, "\n%s:", name);
+    const char* p = strstr(headers, pat);
+    if (!p) {
+        snprintf(pat, sizeof pat, "\r\n%s:", name);
+        p = strstr(headers, pat);
+    }
+    if (!p) return;
+    p = strchr(p, ':');
+    if (!p) return;
+    p++;
+    while (*p == ' ' || *p == '\t') p++;
+    const char* e = strstr(p, "\r\n");
+    if (!e) e = strchr(p, '\n');
+    if (!e) e = p + strlen(p);
+    size_t len = (size_t)(e - p);
+    if (len >= max_len) len = max_len - 1;
+    memcpy(out, p, len);
+    out[len] = 0;
+    while (len > 0 && (out[len - 1] == ' ' || out[len - 1] == '\r')) {
+        out[--len] = 0;
+    }
+}
+static void get_query_param(const char* url, const char* param, char* out, size_t max_len, const char* def) {
+    strncpy(out, def, max_len - 1);
+    out[max_len - 1] = 0;
+    char pat[80];
+    snprintf(pat, sizeof pat, "%s=", param);
+    const char* q = strchr(url, '?');
+    if (!q) return;
+    const char* p = strstr(q, pat);
+    if (!p) return;
+    p += strlen(pat);
+    const char* e = strpbrk(p, " &\r\n");
+    size_t len = e ? (size_t)(e - p) : strlen(p);
+    if (len >= max_len) len = max_len - 1;
+    memcpy(out, p, len);
+    out[len] = 0;
+}
+static void get_sarvam_key(const char* headers, char* key_out, size_t max_len) {
+    key_out[0] = 0;
+    if (headers) {
+        get_header_str(headers, "X-Sarvam-Key", key_out, max_len);
+        if (key_out[0] != 0) return;
+    }
+    const char* env_k = getenv("SARVAM_API_KEY");
+    if (env_k && strlen(env_k) > 0) {
+        strncpy(key_out, env_k, max_len - 1);
+        key_out[max_len - 1] = 0;
+        return;
+    }
+    FILE* f = fopen(".env", "r");
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof line, f)) {
+        char* p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (!strncmp(p, "SARVAM_API_KEY=", 15)) {
+            char* val = p + 15;
+            while (*val == ' ' || *val == '\"' || *val == '\'') val++;
+            size_t len = strlen(val);
+            while (len > 0 && (val[len - 1] == '\r' || val[len - 1] == '\n' || val[len - 1] == ' ' || val[len - 1] == '\"' || val[len - 1] == '\'')) {
+                val[--len] = 0;
+            }
+            strncpy(key_out, val, max_len - 1);
+            key_out[max_len - 1] = 0;
+            break;
+        }
+    }
+    fclose(f);
+}
+static void extract_json_str(const char* json, const char* key, char* out, size_t max_len) {
+    out[0] = 0;
+    char pat[80];
+    snprintf(pat, sizeof pat, "\"%s\"", key);
+    const char* p = strstr(json, pat);
+    if (!p) return;
+    p += strlen(pat);
+    while (*p == ' ' || *p == '\t' || *p == ':') p++;
+    if (*p != '\"') return;
+    p++;
+    size_t idx = 0;
+    while (*p && idx + 1 < max_len) {
+        if (*p == '\\' && *(p + 1)) {
+            p++;
+            if (*p == '\"') out[idx++] = '\"';
+            else if (*p == 'n') out[idx++] = ' ';
+            else if (*p == 't') out[idx++] = ' ';
+            else if (*p == '\\') out[idx++] = '\\';
+            else out[idx++] = *p;
+            p++;
+            continue;
+        }
+        if (*p == '\"') break;
+        out[idx++] = *p++;
+    }
+    out[idx] = 0;
 }
 
 /* ---- JSON request helpers ---- */
@@ -102,7 +216,8 @@ static void serve(sock_t c,const char*u){
     send_file(c,p);
 }
 
-static void api(sock_t c,const char*method,const char*path,const char*body){
+/* ---- API handlers ---- */
+static void api(sock_t c, const char* method, const char* path, const char* body, long body_len, const char* raw_req){
     char out[BUF];
 
     if(!strcmp(path,"/api/health")){
@@ -200,6 +315,142 @@ static void api(sock_t c,const char*method,const char*path,const char*body){
         return;
     }
 
+    /* ---- Sarvam AI Speech-to-Text Transcription ---- */
+    if (!strncmp(path, "/api/transcribe", 15) && !strcmp(method, "POST")) {
+        char key[128] = {0};
+        get_sarvam_key(raw_req, key, sizeof key);
+        if (strlen(key) == 0) {
+            send_resp(c, 400, "application/json",
+                "{\"error\":\"SARVAM_API_KEY is not configured. Please add SARVAM_API_KEY in .env file.\"}");
+            return;
+        }
+        if (body_len <= 0) {
+            send_resp(c, 400, "application/json", "{\"error\":\"No audio data received\"}");
+            return;
+        }
+
+        char lang[32] = {0};
+        get_query_param(path, "lang", lang, sizeof lang, "hi-IN");
+
+        char tmp_file[64];
+        snprintf(tmp_file, sizeof tmp_file, "sarvam_tmp_%ld_%d.webm", (long)time(NULL), rand() % 1000);
+        FILE* af = fopen(tmp_file, "wb");
+        if (!af) {
+            send_resp(c, 500, "application/json", "{\"error\":\"Failed to save temporary audio file\"}");
+            return;
+        }
+        fwrite(body, 1, (size_t)body_len, af);
+        fclose(af);
+
+        char cmd[1024];
+        snprintf(cmd, sizeof cmd,
+            "curl -s -X POST \"https://api.sarvam.ai/speech-to-text\" "
+            "-H \"api-subscription-key: %s\" "
+            "-F \"file=@%s;type=audio/webm\" "
+            "-F \"model=saaras:v4\" "
+            "-F \"mode=transcribe\" "
+            "-F \"language_code=%s\"",
+            key, tmp_file, lang);
+
+        FILE* p = popen(cmd, "r");
+        if (!p) {
+            remove(tmp_file);
+            send_resp(c, 500, "application/json", "{\"error\":\"Failed to execute curl\"}");
+            return;
+        }
+
+        char* resp = malloc(65536);
+        if (!resp) {
+            pclose(p);
+            remove(tmp_file);
+            send_resp(c, 500, "application/json", "{\"error\":\"Out of memory\"}");
+            return;
+        }
+
+        size_t nread = fread(resp, 1, 65535, p);
+        resp[nread] = 0;
+        pclose(p);
+        remove(tmp_file);
+
+        if (nread == 0) {
+            free(resp);
+            send_resp(c, 502, "application/json", "{\"error\":\"Empty response from Sarvam AI API\"}");
+            return;
+        }
+
+        /* Extract transcript text and save to in-memory store */
+        char transcript_text[1024] = {0};
+        extract_json_str(resp, "transcript", transcript_text, sizeof transcript_text);
+
+        int transcript_id = 0;
+        if (strlen(transcript_text) > 0 && voice_transcript_count < MAX_TRANSCRIPTS) {
+            VoiceTranscript* vt = &voice_transcripts[voice_transcript_count++];
+            vt->id = voice_transcript_count;
+            strncpy(vt->transcript, transcript_text, sizeof(vt->transcript) - 1);
+            strncpy(vt->language, lang, sizeof(vt->language) - 1);
+            time_t now = time(NULL);
+            strftime(vt->created_at, sizeof(vt->created_at), "%Y-%m-%d %H:%M:%S", localtime(&now));
+            transcript_id = vt->id;
+        }
+
+        if (resp[0] == '{') {
+            char* final_resp = malloc(65536);
+            if (final_resp) {
+                snprintf(final_resp, 65536, "{\"db_id\":%d,\"saved_to_db\":%s,%s",
+                    transcript_id, transcript_id > 0 ? "true" : "false", resp + 1);
+                send_resp(c, 200, "application/json", final_resp);
+                free(final_resp);
+            } else {
+                send_resp(c, 200, "application/json", resp);
+            }
+        } else {
+            send_resp(c, 200, "application/json", resp);
+        }
+        free(resp);
+        return;
+    }
+
+    /* ---- Voice Transcripts: list ---- */
+    if (!strcmp(path, "/api/transcripts") && !strcmp(method, "GET")) {
+        size_t o = 0;
+        o += snprintf(out + o, sizeof(out) - o, "[");
+        for (int i = voice_transcript_count - 1; i >= 0 && i >= voice_transcript_count - 25; i--) {
+            VoiceTranscript* vt = &voice_transcripts[i];
+            if (i < voice_transcript_count - 1) o += snprintf(out + o, sizeof(out) - o, ",");
+            o += snprintf(out + o, sizeof(out) - o,
+                "{\"id\":%d,\"transcript\":\"%s\",\"language\":\"%s\",\"created_at\":\"%s\"}",
+                vt->id, vt->transcript, vt->language, vt->created_at);
+        }
+        snprintf(out + o, sizeof(out) - o, "]");
+        send_resp(c, 200, "application/json", out);
+        return;
+    }
+
+    /* ---- Voice Transcripts: save manually ---- */
+    if (!strcmp(path, "/api/transcripts") && !strcmp(method, "POST")) {
+        char text[1024] = {0}, lang[32] = {0};
+        get_str(body, "transcript", text, sizeof text);
+        get_str(body, "language", lang, sizeof lang);
+        if (lang[0] == 0) strcpy(lang, "hi-IN");
+        if (strlen(text) == 0) {
+            send_resp(c, 400, "application/json", "{\"error\":\"Missing transcript text\"}");
+            return;
+        }
+        int tid = 0;
+        if (voice_transcript_count < MAX_TRANSCRIPTS) {
+            VoiceTranscript* vt = &voice_transcripts[voice_transcript_count++];
+            vt->id = voice_transcript_count;
+            strncpy(vt->transcript, text, sizeof(vt->transcript) - 1);
+            strncpy(vt->language, lang, sizeof(vt->language) - 1);
+            time_t now = time(NULL);
+            strftime(vt->created_at, sizeof(vt->created_at), "%Y-%m-%d %H:%M:%S", localtime(&now));
+            tid = vt->id;
+        }
+        snprintf(out, sizeof out, "{\"ok\":true,\"id\":%d,\"saved\":true}", tid);
+        send_resp(c, 200, "application/json", out);
+        return;
+    }
+
     send_resp(c,404,"application/json","{\"error\":\"Unknown API route\"}");
 }
 
@@ -222,13 +473,40 @@ int main(void){
     for(;;){
         sock_t c=accept(s,NULL,NULL);
         if(c==INVALID_SOCKET)continue;
-        char*b=calloc(1,BUF);
+        char* b=calloc(1,BUF);
         int n=recv(c,b,BUF-1,0);
         if(n<=0){free(b);CLOSESOCK(c);continue;}
+
+        char* header_end = strstr(b, "\r\n\r\n");
+        long clen = get_content_len(b);
+        long header_len = header_end ? (long)(header_end + 4 - b) : n;
+        long body_in_b = n - header_len;
+
+        if (clen > body_in_b && clen < 15 * 1024 * 1024) {
+            char* full_req = malloc(header_len + clen + 1);
+            if (full_req) {
+                memcpy(full_req, b, n);
+                free(b);
+                b = full_req;
+                long total_body = body_in_b;
+                while (total_body < clen) {
+                    int r = recv(c, b + header_len + total_body, (int)(clen - total_body), 0);
+                    if (r <= 0) break;
+                    total_body += r;
+                }
+                b[header_len + total_body] = 0;
+                n = (int)(header_len + total_body);
+                header_end = strstr(b, "\r\n\r\n");
+            }
+        }
+
         char method[8]={0},path[256]={0};
         sscanf(b,"%7s %255s",method,path);
-        char*body=strstr(b,"\r\n\r\n");body=body?body+4:b+n;
-        if(!strncmp(path,"/api/",5))api(c,method,path,body);
+        char* body = header_end ? (b + header_len) : (b + n);
+        long body_len = clen > 0 ? clen : (long)(n - header_len);
+        if (body_len < 0) body_len = 0;
+
+        if(!strncmp(path,"/api/",5))api(c,method,path,body,body_len,b);
         else serve(c,path);
         free(b);CLOSESOCK(c);}
     return 0;

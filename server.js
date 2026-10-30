@@ -205,6 +205,7 @@ app.post('/api/emergency', (req, res) => {
   });
 });
 
+<<<<<<< Updated upstream
 app.post('/api/gemma', async (req, res) => {
   // ---- Rate limit (server-side only, prevents unbounded API costs) ----
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
@@ -260,6 +261,89 @@ app.post('/api/gemma', async (req, res) => {
     console.error('Gemma API error:', err.message || 'Unknown error');
     res.status(503).json({ ok: false, error: 'AI service is temporarily unavailable.' });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Sarvam AI Speech-to-Text Transcription Route
+// ---------------------------------------------------------------------------
+app.post('/api/transcribe', express.raw({ type: '*/*', limit: '15mb' }), async (req, res) => {
+  try {
+    const customKey = req.headers['x-sarvam-key'];
+    const apiKey = customKey || process.env.SARVAM_API_KEY;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        error: 'SARVAM_API_KEY is not configured. Please add SARVAM_API_KEY in your .env file.',
+      });
+    }
+
+    const audioBuffer = req.body;
+    if (!audioBuffer || audioBuffer.length === 0) {
+      return res.status(400).json({ error: 'No audio data received' });
+    }
+
+    const lang = req.query.lang || 'hi-IN';
+    const contentType = req.headers['content-type'] || 'audio/webm';
+
+    const blob = new Blob([audioBuffer], { type: contentType });
+    const formData = new FormData();
+    formData.append('file', blob, 'audio.webm');
+    formData.append('model', 'saaras:v4');
+    formData.append('mode', 'transcribe');
+    formData.append('language_code', lang);
+
+    const sarvamRes = await fetch('https://api.sarvam.ai/speech-to-text', {
+      method: 'POST',
+      headers: {
+        'api-subscription-key': apiKey,
+      },
+      body: formData,
+    });
+
+    const data = await sarvamRes.json();
+
+    // Save transcript to database / store
+    const text = (data.transcript || '').trim();
+    if (text) {
+      const record = {
+        id: voiceTranscripts.length + 1,
+        transcript: text,
+        language: lang,
+        created_at: new Date().toISOString(),
+      };
+      voiceTranscripts.unshift(record);
+      data.db_id = record.id;
+      data.saved_to_db = true;
+    }
+
+    return res.status(sarvamRes.status).json(data);
+  } catch (err) {
+    console.error('Sarvam AI transcription error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to transcribe audio' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Voice Transcripts Routes
+// ---------------------------------------------------------------------------
+const voiceTranscripts = [];
+
+app.get('/api/transcripts', (req, res) => {
+  res.json(voiceTranscripts);
+});
+
+app.post('/api/transcripts', (req, res) => {
+  const text = String(req.body.transcript || '').trim();
+  const lang = String(req.body.language || 'hi-IN');
+  if (!text) return res.status(400).json({ error: 'Missing transcript text' });
+  const item = {
+    id: voiceTranscripts.length + 1,
+    transcript: text,
+    language: lang,
+    created_at: new Date().toISOString(),
+  };
+  voiceTranscripts.unshift(item);
+  res.json({ ok: true, id: item.id, saved: true });
 });
 
 // Unmatched API routes -> 404 JSON (mirrors server.c)

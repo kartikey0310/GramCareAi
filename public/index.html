@@ -37,11 +37,12 @@
     <main>
       <section class="hero" id="home">
         <h1>Say what's wrong. We'll send help.</h1>
-        <p class="dek">Voice-first rural healthcare — works offline.</p>
+        <p class="dek">Voice-first rural healthcare — powered by Sarvam AI Indic Speech Recognition.</p>
         <p>
-          Tap the microphone and speak in Hindi or English. No internet? Your
-          request is saved on this phone and sent the moment the network is
-          back.
+          Tap the microphone and speak in Hindi or English. Your speech is
+          automatically converted into text and shown in the text section. No
+          internet? Your request is saved on this phone and sent the moment the
+          network is back.
         </p>
         <div class="mic-wrap">
           <button id="mic" aria-label="Speak for help">
@@ -57,12 +58,20 @@
             id="typedGo"
           >
             Send
+          </button
+          ><button
+            class="btn alt sm"
+            id="sarvamKeyBtn"
+            title="Configure Sarvam AI API Key"
+          >
+            ⚙️ Key
           </button>
         </div>
         <p id="vmsg" role="status" class="note">
           Try saying: “I need an ambulance, chest pain”. Press V to talk.
         </p>
         <p id="heard" class="heard"></p>
+        <div id="tSaved" class="tsaved" hidden></div>
         <div class="chips">
           <button data-t="ambulance chest pain">🚑 Chest pain</button
           ><button data-t="ambulance difficulty breathing">😮‍💨 Breathing</button
