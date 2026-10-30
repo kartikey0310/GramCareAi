@@ -51,8 +51,18 @@ $("addPatient").onclick = async () => {
       mobile: $("pm").value,
     }),
   });
-  $("pmsg").textContent = x.error || `Saved ${x.id}`;
-  if (x.ok) patients();
+  if (x.error) {
+    $("pmsg").textContent = x.error;
+    $("pmsg").style.color = "#d4202c";
+  } else {
+    $("pmsg").textContent = "Saved " + x.id;
+    $("pmsg").style.color = "#2d5a3e";
+    $("pn").value = "";
+    $("pa").value = "";
+    $("pv").value = "";
+    $("pm").value = "";
+    patients();
+  }
 };
 $("sos").onclick = async () => {
   let x = await api("/api/emergency", {
@@ -65,10 +75,11 @@ $("sos").onclick = async () => {
   $("estatus").innerHTML =
     `<h3>${x.status}</h3><p>Case ${x.id} · ${x.responder} · Demo ETA ${x.eta_min} min</p>`;
 };
-let cart = [];
+let cart = JSON.parse(localStorage.getItem("gc_cart") || "[]");
 function drawCart() {
   $("cartCount").textContent = cart.length;
   $("total").textContent = cart.reduce((s, m) => s + m.price, 0);
+  localStorage.setItem("gc_cart", JSON.stringify(cart));
 }
 api("/api/medicines")
   .then(
@@ -481,15 +492,40 @@ setInterval(
     }),
   1000,
 );
-/* vitals: on-device check mirrors the C rules, so it works offline */
-const edge = (h, s, t) =>
-  h < 30 || h > 220 || s < 50 || s > 100 || t < 30 || t > 45
-    ? "INVALID"
-    : s < 90 || h > 130 || h < 45 || t >= 39.5
-      ? "URGENT"
-      : s < 94 || h > 100 || h < 55 || t >= 38
-        ? "REVIEW"
-        : "NORMAL";
+/* vitals: clinical threshold assessment, works offline */
+const assessVitals = (hr, spo2, temp, rr) => {
+  const issues = [];
+  let severity = "NORMAL";
+
+  if (hr < 30 || hr > 220 || spo2 < 50 || spo2 > 100 || temp < 30 || temp > 45 || (rr && (rr < 6 || rr > 40))) {
+    return { flag: "INVALID", message: "Re-check the measurement", issues: ["Invalid reading"] };
+  }
+
+  if (hr < 60) issues.push("Bradycardia (low heart rate)");
+  else if (hr > 100) issues.push("Tachycardia (high heart rate)");
+
+  if (spo2 < 90) { issues.push("Severe hypoxemia (very low SpO₂)"); severity = "URGENT"; }
+  else if (spo2 < 94) { issues.push("Low SpO₂"); if (severity !== "URGENT") severity = "REVIEW"; }
+
+  if (temp < 35) { issues.push("Hypothermia (low temperature)"); severity = "URGENT"; }
+  else if (temp >= 39.5) { issues.push("Hyperpyrexia (very high fever)"); severity = "URGENT"; }
+  else if (temp >= 38) { issues.push("Fever"); if (severity !== "URGENT") severity = "REVIEW"; }
+
+  if (rr) {
+    if (rr < 12) issues.push("Bradypnea (low respiratory rate)");
+    else if (rr > 20) issues.push("Tachypnea (high respiratory rate)");
+  }
+
+  if (severity === "NORMAL" && issues.length === 0) {
+    return { flag: "NORMAL", message: "All vitals within normal range", issues: [] };
+  }
+  return { flag: severity, message: issues.join(" · "), issues };
+};
+
+const edge = (h, s, t) => {
+  const r = assessVitals(h, s, t);
+  return r.flag;
+};
 let bpm = 78,
   ecgCol = "#0aa7b8";
 $("check").onclick = async () => {
@@ -504,18 +540,21 @@ $("check").onclick = async () => {
     });
     if (!x.flag) throw 0;
   } catch {
-    const f = edge(h, s, t);
+    const r = assessVitals(h, s, t);
     x = {
-      flag: f,
-      message:
-        (f === "INVALID"
-          ? "Re-check the measurement"
-          : "Attention flag only, not a diagnosis") +
-        " (checked on this device)",
+      flag: r.flag,
+      message: r.message + " (checked on this device)",
+      issues: r.issues,
     };
   }
   $("flag").innerHTML =
-    `<span class="chip ${x.flag}">${x.flag}</span> ${x.message}`;
+    `<span class="chip ${x.flag}">${x.flag}</span> ${x.message}${
+      x.issues && x.issues.length
+        ? '<ul class="vitals-issues">' +
+          x.issues.map((i) => "<li>" + i + "</li>").join("") +
+          "</ul>"
+        : ""
+    }`;
   bpm = h >= 30 && h <= 220 ? h : 78;
   $("bpm").textContent = bpm;
   ecgCol =

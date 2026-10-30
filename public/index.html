@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>GramCare AI - C Edition</title>
+    <title>GramCare AI</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#6f4e37" />
@@ -17,7 +17,7 @@
       requests are saved until the network returns.
     </div>
     <header>
-      <b>🩺 GramCare AI <small>C Edition</small></b>
+      <b>🩺 GramCare AI</b>
       <nav>
         <a href="#home">Home</a>
         <a href="#data">Data</a>
@@ -82,10 +82,10 @@
         </div>
       </section>
       <section class="stats">
-        <div><b>C</b><span>Main backend</span></div>
-        <div><b>REST</b><span>Browser ↔ C API</span></div>
-        <div><b>EN / हिं</b><span>Accessible UI</span></div>
-        <div><b id="apiState">…</b><span>Server status</span></div>
+        <div><b>🏥</b><span>Healthcare access</span></div>
+        <div><b>📱</b><span>Mobile-first UI</span></div>
+        <div><b>EN / हिं</b><span>Bilingual support</span></div>
+        <div><b id="apiState">…</b><span>System status</span></div>
       </section>
       <hr class="section-divider" />
       <section id="data">
@@ -138,12 +138,8 @@
           <label>Heart rate<input id="hr" type="number" value="78" /></label
           ><label>SpO₂ %<input id="spo2" type="number" value="97" /></label
           ><label
-            >Temperature °C<input
-              id="temp"
-              type="number"
-              step=".1"
-              value="36.8" /></label
-          ><button class="btn" id="check">Check in C</button>
+            >Temperature<input id="temp" type="number" step=".1" value="36.8" /></label
+          ><button class="btn" id="check">Check</button>
           <div id="flag"></div>
         </div>
       </section>
@@ -155,7 +151,7 @@
           ><label>Age<input id="pa" type="number" /></label
           ><label>Village<input id="pv" /></label
           ><label>Mobile<input id="pm" /></label
-          ><button class="btn" id="addPatient">Save via C</button
+          ><button class="btn" id="addPatient">Save</button>
           ><span id="pmsg"></span>
         </div>
         <input id="ps" class="search" placeholder="🔍 Search patients" />
@@ -225,46 +221,44 @@
         </p>
         <div class="grid about">
           <article class="card person">
-            <div class="av">S</div>
-            <h3>Sagar</h3>
-            <p><b>Project Developer</b></p>
-            <p class="note">Haryana, India</p>
+            <div class="av">A</div>
+            <h3>Atharva Gupta</h3>
+            <p><b>Frontend Developer</b></p>
+            <p class="note">Dehradun, Uttrakhand</p>
           </article>
           <article class="card person">
             <div class="av alt">H</div>
-            <h3>Harshit</h3>
-            <p><b>Project Developer</b></p>
-            <p class="note">Haryana, India</p>
+            <h3>Harshil Aneja</h3>
+            <p><b>Backend Developer</b></p>
+            <p class="note">Dehradun, Uttrakhand</p>
+          </article>
+          <article class="card person">
+            <div class="av">K</div>
+            <h3>Kartikey Agarwal</h3>
+            <p><b>GitHub Maintainer</b></p>
+            <p class="note">Dehradun, Uttrakhand</p>
+          </article>
+          <article class="card person">
+            <div class="av alt">N</div>
+            <h3>Neil Kashyap</h3>
+            <p><b>Voice to Text Integrator</b></p>
+            <p class="note">Dehradun, Uttrakhand</p>
+          </article>
+          <article class="card person">
+            <div class="av">R</div>
+            <h3>Ramayani Sharma</h3>
+            <p><b>Voice to Text Integrator</b></p>
+            <p class="note">Dehradun, Uttrakhand</p>
           </article>
           <article class="card person">
             <div class="av ph">📞</div>
             <h3>Contact</h3>
-            <p><a href="tel:+918708318084">+91 87083 18084</a></p>
-            <p class="note">Sagar & Harshit · Haryana, India</p>
+            <p><a href="tel:+917780925187">+91 778092 5187</a></p>
+            <p class="note">GramCare AI Team · Dehradun, Uttrakhand</p>
           </article>
         </div>
       </section>
       <hr class="section-divider" />
-      <section>
-        <h2>Why C?</h2>
-        <div class="grid">
-          <article class="card">
-            <h3>⚡ Fast</h3>
-            <p>Useful for low-resource edge devices and health kiosks.</p>
-          </article>
-          <article class="card">
-            <h3>📴 Edge-ready</h3>
-            <p>Vital validation can run locally even with weak connectivity.</p>
-          </article>
-          <article class="card">
-            <h3>🔌 Hardware-friendly</h3>
-            <p>
-              C can integrate with sensors such as pulse oximeters and embedded
-              devices.
-            </p>
-          </article>
-        </div>
-      </section>
     </main>
     <footer>
       GramCare AI is an educational prototype, not medical advice or an official
