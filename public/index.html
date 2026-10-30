@@ -1,20 +1,275 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GramCare AI - C Edition</title><link rel="stylesheet" href="style.css"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#087f8c"><link rel="icon" href="/icon.svg"></head><body><div id="prog"></div><div id="toasts" aria-live="polite"></div><div id="offbar">You are offline. Everything here still works from stored data, and help requests are saved until the network returns.</div>
-<header><b>🩺 GramCare AI <small>C Edition</small></b><nav><a href="#home">Home</a><a href="#data">Data</a><a href="#monitor">Monitoring</a><a href="#patients">Patients</a><a href="#emergency">Emergency</a><a href="#store">Medicine Store</a><a href="#about">About</a></nav><span id="net" class="net"></span><div><button id="theme" title="Dark mode">🌓</button><button id="big">A+</button><button id="voice">🔊</button></div></header>
-<main><section class="hero" id="home"><h1>Say what's wrong. We'll send help.</h1><p>Tap the microphone and speak in Hindi or English. No internet? Your request is saved on this phone and sent the moment the network is back.</p>
-<div class="mic-wrap"><button id="mic" aria-label="Speak for help"><span>🎙️</span><i></i><i></i><i></i><i></i><i></i></button></div>
-<div class="vrow"><select id="vl" aria-label="Language"><option value="en-IN">English</option><option value="hi-IN">हिन्दी</option></select><input id="typed" placeholder="Or type what happened"><button class="btn" id="typedGo">Send</button></div>
-<p id="vmsg" role="status" class="note">Try saying: “I need an ambulance, chest pain”. Press V to talk.</p><p id="heard" class="heard"></p>
-<div class="chips"><button data-t="ambulance chest pain">🚑 Chest pain</button><button data-t="ambulance difficulty breathing">😮‍💨 Breathing</button><button data-t="ambulance accident bleeding">🩸 Accident</button><button data-t="ambulance pregnancy labour">🤰 Pregnancy</button><button data-t="I need a doctor">🩺 Doctor / ASHA</button></div>
-<p id="qinfo" class="queue" hidden></p><div id="confirm" class="card pop" hidden></div><div id="track" class="card pop" hidden></div>
-<div class="warn">Prototype only: no real ambulance is contacted. In a real emergency call 112 or 108.</div><div class="actions"><a class="btn danger" href="tel:112">📞 Call 112</a><a class="btn" href="tel:108">🚑 Call 108</a></div></section>
-<section class="stats"><div><b>C</b><span>Main backend</span></div><div><b>REST</b><span>Browser ↔ C API</span></div><div><b>EN / हिं</b><span>Accessible UI</span></div><div><b id="apiState">…</b><span>Server status</span></div></section>
-<section id="data"><h2>📶 Data &amp; offline storage</h2><p class="note" id="ready">Checking offline storage…</p>
-<div class="meter"><div class="card m"><span>Internet used</span><b id="mNet">0 B</b><small id="mNetReq"></small></div><div class="card m"><span>Served offline</span><b id="mCache">0 B</b><small id="mCacheReq"></small></div><div class="card m"><span>Stored on this device</span><b id="mStore">–</b><small>pages, scripts, records</small></div><div class="card m"><span>Data saved</span><b id="mSave">0%</b><small>of site data came from storage</small></div></div>
-<div class="card"><b>Where the internet data went</b><div id="bar" class="bar"></div><div id="legend" class="legend"></div><div class="actions left"><button class="btn" id="refresh">Update offline copy</button><button class="btn alt" id="reset">Reset counters</button><label class="sw"><input type="checkbox" id="sim"> Simulate no network (demo)</label></div></div></section><section id="monitor"><h2>❤️ Remote Monitoring</h2><p class="note">Educational attention flags, not diagnosis.</p><div class="card ecgc"><canvas id="ecg" height="110"></canvas><div class="ecgr"><div><b id="bpm">78</b> <span>BPM</span></div><button class="btn alt" id="live">▶ Live sensor demo</button></div></div><div class="card form"><label>Heart rate<input id="hr" type="number" value="78"></label><label>SpO₂ %<input id="spo2" type="number" value="97"></label><label>Temperature °C<input id="temp" type="number" step=".1" value="36.8"></label><button class="btn" id="check">Check in C</button><div id="flag"></div></div></section>
-<section id="patients"><h2>👥 Patient Records</h2><div class="card form"><label>Name<input id="pn"></label><label>Age<input id="pa" type="number"></label><label>Village<input id="pv"></label><label>Mobile<input id="pm"></label><button class="btn" id="addPatient">Save via C</button><span id="pmsg"></span></div><input id="ps" class="search" placeholder="🔍 Search patients"><div class="table"><table><thead><tr><th>ID</th><th>Name</th><th>Age</th><th>Village</th><th>Mobile</th><th>Status</th></tr></thead><tbody id="pt"></tbody></table></div></section>
-<section id="emergency"><h2>🚑 Emergency Alert & Tracking</h2><div class="warn">Prototype only. No real emergency service is contacted. In a real emergency in India, call 112.</div><div class="card form"><label>Patient name<input id="en"></label><label>Problem<select id="ep"><option>Chest pain</option><option>Difficulty breathing</option><option>Accident / injury</option><option>Pregnancy emergency</option><option>Unconscious / fainting</option><option>Snake / animal bite</option></select></label><button class="btn danger" id="sos">🚨 Alert nearest doctor / ASHA</button><div id="estatus"></div></div></section>
-<section id="store"><h2>💊 Medicine & Health Store</h2><div class="warn">Demo pharmacy only. Prescription medicines remain locked for clinician review.</div><input id="ms" class="search" placeholder="🔍 Search medicines"><div id="meds" class="grid"></div><div class="card"><b>Demo cart: <span id="cartCount">0</span> item(s)</b> · Total ₹<span id="total">0</span></div></section>
-<section id="about"><h2>👋 About GramCare Team</h2><p class="note">GramCare AI is a healthcare technology project created to make basic digital health support more accessible, especially in areas with weak or unavailable internet connectivity.</p>
-<div class="grid about"><article class="card person"><div class="av">S</div><h3>Sagar</h3><p><b>Project Developer</b></p><p class="note">Haryana, India</p></article><article class="card person"><div class="av alt">H</div><h3>Harshit</h3><p><b>Project Developer</b></p><p class="note">Haryana, India</p></article>
-<article class="card person"><div class="av ph">📞</div><h3>Contact</h3><p><a href="tel:+918708318084">+91 87083 18084</a></p><p class="note">Sagar & Harshit · Haryana, India</p></article></div></section><section><h2>Why C?</h2><div class="grid"><article class="card"><h3>⚡ Fast</h3><p>Useful for low-resource edge devices and health kiosks.</p></article><article class="card"><h3>📴 Edge-ready</h3><p>Vital validation can run locally even with weak connectivity.</p></article><article class="card"><h3>🔌 Hardware-friendly</h3><p>C can integrate with sensors such as pulse oximeters and embedded devices.</p></article></div></section></main>
-<footer>GramCare AI is an educational prototype, not medical advice or an official emergency service.</footer><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>GramCare AI - C Edition</title>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#6f4e37" />
+    <link rel="icon" href="/icon.svg" />
+  </head>
+  <body>
+    <div id="prog"></div>
+    <div id="toasts" aria-live="polite"></div>
+    <div id="offbar">
+      You are offline. Everything here still works from stored data, and help
+      requests are saved until the network returns.
+    </div>
+    <header>
+      <b>🩺 GramCare AI <small>C Edition</small></b>
+      <nav>
+        <a href="#home">Home</a>
+        <a href="#data">Data</a>
+        <a href="#monitor">Monitoring</a>
+        <a href="#patients">Patients</a>
+        <a href="#emergency">Emergency</a>
+        <a href="#store">Medicine Store</a>
+        <a href="#about">About</a>
+      </nav>
+      <span id="net" class="net"></span>
+      <div>
+        <button id="theme" title="Dark mode">🌓</button
+        ><button id="big">A+</button><button id="voice">🔊</button>
+      </div>
+    </header>
+    <main>
+      <section class="hero" id="home">
+        <h1>Say what's wrong. We'll send help.</h1>
+        <p class="dek">Voice-first rural healthcare — works offline.</p>
+        <p>
+          Tap the microphone and speak in Hindi or English. No internet? Your
+          request is saved on this phone and sent the moment the network is
+          back.
+        </p>
+        <div class="mic-wrap">
+          <button id="mic" aria-label="Speak for help">
+            <span>🎙️</span><i></i><i></i><i></i><i></i><i></i>
+          </button>
+        </div>
+        <div class="vrow">
+          <select id="vl" aria-label="Language">
+            <option value="en-IN">English</option>
+            <option value="hi-IN">हिन्दी</option></select
+          ><input id="typed" placeholder="Or type what happened" /><button
+            class="btn"
+            id="typedGo"
+          >
+            Send
+          </button>
+        </div>
+        <p id="vmsg" role="status" class="note">
+          Try saying: “I need an ambulance, chest pain”. Press V to talk.
+        </p>
+        <p id="heard" class="heard"></p>
+        <div class="chips">
+          <button data-t="ambulance chest pain">🚑 Chest pain</button
+          ><button data-t="ambulance difficulty breathing">😮‍💨 Breathing</button
+          ><button data-t="ambulance accident bleeding">🩸 Accident</button
+          ><button data-t="ambulance pregnancy labour">🤰 Pregnancy</button
+          ><button data-t="I need a doctor">🩺 Doctor / ASHA</button>
+        </div>
+        <p id="qinfo" class="queue" hidden></p>
+        <div id="confirm" class="card pop" hidden></div>
+        <div id="track" class="card pop" hidden></div>
+        <div class="warn">
+          Prototype only: no real ambulance is contacted. In a real emergency
+          call 112 or 108.
+        </div>
+        <div class="actions">
+          <a class="btn danger" href="tel:112">📞 Call 112</a
+          ><a class="btn" href="tel:108">🚑 Call 108</a>
+        </div>
+      </section>
+      <section class="stats">
+        <div><b>C</b><span>Main backend</span></div>
+        <div><b>REST</b><span>Browser ↔ C API</span></div>
+        <div><b>EN / हिं</b><span>Accessible UI</span></div>
+        <div><b id="apiState">…</b><span>Server status</span></div>
+      </section>
+      <hr class="section-divider" />
+      <section id="data">
+        <h2>📶 Data &amp; offline storage</h2>
+        <p class="note" id="ready">Checking offline storage…</p>
+        <div class="meter">
+          <div class="card m">
+            <span>Internet used</span><b id="mNet">0 B</b
+            ><small id="mNetReq"></small>
+          </div>
+          <div class="card m">
+            <span>Served offline</span><b id="mCache">0 B</b
+            ><small id="mCacheReq"></small>
+          </div>
+          <div class="card m">
+            <span>Stored on this device</span><b id="mStore">–</b
+            ><small>pages, scripts, records</small>
+          </div>
+          <div class="card m">
+            <span>Data saved</span><b id="mSave">0%</b
+            ><small>of site data came from storage</small>
+          </div>
+        </div>
+        <div class="card">
+          <b>Where the internet data went</b>
+          <div id="bar" class="bar"></div>
+          <div id="legend" class="legend"></div>
+          <div class="actions left">
+            <button class="btn" id="refresh">Update offline copy</button
+            ><button class="btn alt" id="reset">Reset counters</button
+            ><label class="sw"
+              ><input type="checkbox" id="sim" /> Simulate no network
+              (demo)</label
+            >
+          </div>
+        </div>
+      </section>
+      <hr class="section-divider" />
+      <section id="monitor">
+        <h2>❤️ Remote Monitoring</h2>
+        <p class="note">Educational attention flags, not diagnosis.</p>
+        <div class="card ecgc">
+          <canvas id="ecg" height="110"></canvas>
+          <div class="ecgr">
+            <div><b id="bpm">78</b> <span>BPM</span></div>
+            <button class="btn alt" id="live">▶ Live sensor demo</button>
+          </div>
+        </div>
+        <div class="card form">
+          <label>Heart rate<input id="hr" type="number" value="78" /></label
+          ><label>SpO₂ %<input id="spo2" type="number" value="97" /></label
+          ><label
+            >Temperature °C<input
+              id="temp"
+              type="number"
+              step=".1"
+              value="36.8" /></label
+          ><button class="btn" id="check">Check in C</button>
+          <div id="flag"></div>
+        </div>
+      </section>
+      <hr class="section-divider" />
+      <section id="patients">
+        <h2>👥 Patient Records</h2>
+        <div class="card form">
+          <label>Name<input id="pn" /></label
+          ><label>Age<input id="pa" type="number" /></label
+          ><label>Village<input id="pv" /></label
+          ><label>Mobile<input id="pm" /></label
+          ><button class="btn" id="addPatient">Save via C</button
+          ><span id="pmsg"></span>
+        </div>
+        <input id="ps" class="search" placeholder="🔍 Search patients" />
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Age</th>
+                <th>Village</th>
+                <th>Mobile</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="pt"></tbody>
+          </table>
+        </div>
+      </section>
+      <hr class="section-divider" />
+      <section id="emergency">
+        <h2>🚑 Emergency Alert & Tracking</h2>
+        <div class="warn">
+          Prototype only. No real emergency service is contacted. In a real
+          emergency in India, call 112.
+        </div>
+        <div class="card form">
+          <label>Patient name<input id="en" /></label
+          ><label
+            >Problem<select id="ep">
+              <option>Chest pain</option>
+              <option>Difficulty breathing</option>
+              <option>Accident / injury</option>
+              <option>Pregnancy emergency</option>
+              <option>Unconscious / fainting</option>
+              <option>Snake / animal bite</option>
+            </select></label
+          ><button class="btn danger" id="sos">
+            🚨 Alert nearest doctor / ASHA
+          </button>
+          <div id="estatus"></div>
+        </div>
+      </section>
+      <hr class="section-divider" />
+      <section id="store">
+        <h2>💊 Medicine & Health Store</h2>
+        <div class="warn">
+          Demo pharmacy only. Prescription medicines remain locked for clinician
+          review.
+        </div>
+        <input id="ms" class="search" placeholder="🔍 Search medicines" />
+        <div id="meds" class="grid"></div>
+        <div class="card">
+          <b>Demo cart: <span id="cartCount">0</span> item(s)</b> · Total ₹<span
+            id="total"
+            >0</span
+          >
+        </div>
+      </section>
+      <hr class="section-divider" />
+      <section id="about">
+        <h2>👋 About GramCare Team</h2>
+        <p class="note">
+          GramCare AI is a healthcare technology project created to make basic
+          digital health support more accessible, especially in areas with weak
+          or unavailable internet connectivity.
+        </p>
+        <div class="grid about">
+          <article class="card person">
+            <div class="av">S</div>
+            <h3>Sagar</h3>
+            <p><b>Project Developer</b></p>
+            <p class="note">Haryana, India</p>
+          </article>
+          <article class="card person">
+            <div class="av alt">H</div>
+            <h3>Harshit</h3>
+            <p><b>Project Developer</b></p>
+            <p class="note">Haryana, India</p>
+          </article>
+          <article class="card person">
+            <div class="av ph">📞</div>
+            <h3>Contact</h3>
+            <p><a href="tel:+918708318084">+91 87083 18084</a></p>
+            <p class="note">Sagar & Harshit · Haryana, India</p>
+          </article>
+        </div>
+      </section>
+      <hr class="section-divider" />
+      <section>
+        <h2>Why C?</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>⚡ Fast</h3>
+            <p>Useful for low-resource edge devices and health kiosks.</p>
+          </article>
+          <article class="card">
+            <h3>📴 Edge-ready</h3>
+            <p>Vital validation can run locally even with weak connectivity.</p>
+          </article>
+          <article class="card">
+            <h3>🔌 Hardware-friendly</h3>
+            <p>
+              C can integrate with sensors such as pulse oximeters and embedded
+              devices.
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+    <footer>
+      GramCare AI is an educational prototype, not medical advice or an official
+      emergency service.
+    </footer>
+    <script src="app.js"></script>
+  </body>
+</html>
