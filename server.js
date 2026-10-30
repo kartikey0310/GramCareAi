@@ -6,6 +6,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
+const { GoogleGenAI } = require('@google/genai');
+
 const app = express();
 
 // CORS (server.c set Access-Control-Allow-Origin: * on every response)
@@ -33,6 +35,40 @@ function edge(hr, sp, tp) {
   if (sp < 94 || hr > 100 || hr < 55 || tp >= 38) return 'REVIEW';
   return 'NORMAL';
 }
+
+// ---------------------------------------------------------------------------
+// Gemma 4 client (server-side only — API key never reaches frontend)
+// ---------------------------------------------------------------------------
+let geminiClient = null;
+function getGeminiClient() {
+  if (!geminiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY is not set');
+    }
+    geminiClient = new GoogleGenAI({ apiKey });
+  }
+  return geminiClient;
+}
+
+// Preferred Gemma 4 model via the Gemini API
+const GEMMA_MODEL = 'gemma-4-31b-it';
+
+const HEALTHCARE_SYSTEM_INSTRUCTION = `You are GramCare AI, an educational rural-healthcare prototype.
+Provide general educational health information only.
+Never claim to diagnose the user.
+Never claim to replace a doctor.
+Avoid presenting uncertain medical information as fact.
+Recommend appropriate professional medical care when necessary.
+Keep responses concise and easy to understand.
+Be suitable for users who may have limited medical knowledge.
+Respond in the language used by the user when practical (English or Hindi/Hinglish).
+For potentially urgent symptoms such as severe chest pain, severe difficulty breathing,
+unconsciousness, severe bleeding, signs of stroke, serious accident/injury, or other
+obvious emergencies, clearly recommend seeking immediate emergency medical assistance
+rather than relying on the AI.
+Do not imply that GramCare has actually contacted an ambulance, doctor, ASHA worker,
+hospital, or emergency service.`;
 
 // ---------------------------------------------------------------------------
 // API routes (exact frontend contracts preserved)
@@ -109,6 +145,51 @@ app.post('/api/emergency', (req, res) => {
   });
 });
 
+app.post('/api/gemma', async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    // ---- Input validation ----
+    if (message === undefined || message === null) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    if (typeof message !== 'string') {
+      return res.status(400).json({ error: 'Message must be a string' });
+    }
+    if (!message.trim()) {
+      return res.status(400).json({ error: 'Message must not be empty' });
+    }
+    if (message.length > 2000) {
+      return res.status(400).json({ error: 'Message must not exceed 2000 characters' });
+    }
+
+    // ---- API key check (server-side only) ----
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ ok: false, error: 'AI service is temporarily unavailable.' });
+    }
+
+    // ---- Call Gemma 4 via Gemini API ----
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: GEMMA_MODEL,
+      contents: HEALTHCARE_SYSTEM_INSTRUCTION + '\n\nUser: ' + message,
+    });
+
+    const responseText = response.text || '';
+
+    res.json({
+      ok: true,
+      model: GEMMA_MODEL,
+      response: responseText,
+      disclaimer: 'Educational information only — not a diagnosis or replacement for professional medical care.',
+    });
+  } catch (err) {
+    // Log only safe debugging information (no keys, no stack traces)
+    console.error('Gemma API error:', err.message || 'Unknown error');
+    res.status(503).json({ ok: false, error: 'AI service is temporarily unavailable.' });
+  }
+});
+
 // Unmatched API routes -> 404 JSON (mirrors server.c)
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'Unknown API route' });
@@ -128,6 +209,11 @@ app.get('*', (req, res) => {
 // Start server
 // ---------------------------------------------------------------------------
 const PORT = process.env.PORT || 8080;
+
+if (!process.env.GEMINI_API_KEY) {
+  console.warn('WARNING: GEMINI_API_KEY is not set. /api/gemma will be unavailable.');
+}
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`GramCare Node.js server: http://localhost:${PORT}`);
   console.log('Press Ctrl+C to stop.');
