@@ -239,20 +239,263 @@ function classify(t) {
   return null;
 }
 const hi = () => $("vl").value === "hi-IN",
-  say = (t) => {
+  say = (t, l = $("vl").value) => {
     if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(t);
-      u.lang = $("vl").value;
+      u.lang = l || "en-IN";
       speechSynthesis.speak(u);
     }
   };
+
+/* ---- Voice Conversation Session, History & Playback (Backend + Offline Memory) ---- */
+let currentVoiceSessionId = null;
+let lastSavedVoiceSession = null;
+
+function formatRelativeTime(dateStr) {
+  if (!dateStr) return "recently";
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (isNaN(diff) || diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+function getAssistantReply(text, lang) {
+  const isHi = lang === "hi-IN";
+  const c = classify(text);
+
+  if (!c) {
+    return isHi
+      ? "मैं आपकी बात सुन रहा हूँ। कृपया समस्या का विवरण बताएं (जैसे बुखार, सीने में दर्द, या चोट) ताकि हम तुरंत उचित सहायता प्रदान कर सकें।"
+      : "I hear you. Please describe what happened or any symptoms you or the patient are experiencing so I can assist.";
+  }
+
+  if (c.problem === "Chest pain") {
+    return isHi
+      ? "सीने में दर्द एक गंभीर आपातकाल हो सकता है। मरीज को शांत बैठाएं और तंग कपड़े ढीले करें। क्या तुरंत एम्बुलेंस रवाना करें?"
+      : "Severe chest pain requires urgent attention. Keep the patient seated upright and calm. Should I dispatch an emergency ambulance now?";
+  }
+  if (c.problem === "Difficulty breathing") {
+    return isHi
+      ? "सांस लेने में तकलीफ दर्ज की गई है। मरीज को खुली हवा में सीधा बैठाएं। आपातकालीन सहायता तैयार की जा रही है।"
+      : "Difficulty breathing noted. Keep the patient upright in fresh air. Emergency response is being arranged.";
+  }
+  if (c.problem === "Accident / injury") {
+    return isHi
+      ? "चोट और रक्तस्राव: साफ कपड़े से घाव को कसकर दबाएं। आपातकालीन दल को सूचना भेजी जा रही है।"
+      : "Accident / injury noted. Apply firm pressure to any bleeding using a clean cloth. Preparing emergency dispatch.";
+  }
+  if (c.problem === "Pregnancy emergency") {
+    return isHi
+      ? "प्रसव / गर्भावस्था आपातकाल: मरीज को बाईं करवट आराम से लिटाएं और शांत रखें। आपातकालीन वाहन तैयार किया जा रहा है।"
+      : "Pregnancy emergency noted. Keep the patient comfortable and resting on her left side. Preparing emergency transport.";
+  }
+  if (c.problem === "Unconscious / fainting") {
+    return isHi
+      ? "मरीज बेहोश है: सांस की जांच करें और करवट से लिटाएं (रिकवरी पोजिशन)। मुंह में पानी या दवाई बिल्कुल न दें।"
+      : "Patient unconscious. Check breathing and place them on their side in recovery position. Never give liquids. Help is being notified.";
+  }
+  if (c.problem === "Snake / animal bite") {
+    return isHi
+      ? "सांप या जानवर का काटना: मरीज को शांत और स्थिर रखें ताकि जहर न फैले। घाव को काटें या बांधें नहीं। तुरंत डॉक्टर की जरूरत है।"
+      : "Bite emergency. Keep the patient still and calm to slow venom circulation. Do not cut or suck the bite. Immediate care needed.";
+  }
+  if (c.kind === "ambulance") {
+    return isHi
+      ? "आपातकालीन वाहन का अनुरोध प्राप्त हुआ। क्या आप नजदीकी 108/112 एम्बुलेंस रवाना करना चाहते हैं?"
+      : "Emergency assistance requested. Would you like to confirm immediate ambulance dispatch?";
+  }
+  return isHi
+    ? "डॉक्टर / आशा कार्यकर्ता परामर्श दर्ज किया गया है। आप नीचे 'निगरानी' (Monitoring) भाग में दिल की धड़कन और ऑक्सीजन भी जांच सकते हैं।"
+    : "Doctor / ASHA assistance recorded. You can also monitor pulse and oxygen in the Monitoring section below.";
+}
+
+function renderMessage(msg) {
+  const tl = $("voiceTimeline");
+  if (!tl) return;
+  const isUser = msg.sender === "user";
+  const div = document.createElement("div");
+  div.className = `conv-msg ${isUser ? "user" : "assistant"}`;
+
+  const timeStr = msg.created_at
+    ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  div.innerHTML = `
+    <div class="conv-msg-header">
+      <span class="conv-sender">${isUser ? "👤 You" : "🩺 GramCare AI"}</span>
+      <span class="conv-time">${timeStr}</span>
+    </div>
+    <div class="conv-bubble">
+      ${msg.text}
+      <div>
+        <button class="btn-replay-audio" type="button" title="Listen to this message">
+          🔊 Replay audio
+        </button>
+      </div>
+    </div>
+  `;
+
+  div.querySelector(".btn-replay-audio").onclick = () => {
+    say(msg.text, msg.lang || "en-IN");
+  };
+
+  tl.appendChild(div);
+  tl.scrollTop = tl.scrollHeight;
+}
+
+async function checkLastVoiceSession() {
+  try {
+    const res = await api("/api/voice/session/latest");
+    if (res && res.has_session && res.session) {
+      lastSavedVoiceSession = res;
+      $("voiceResumeCard").style.display = "block";
+      $("resumeTopic").innerHTML = `<strong>Last active conversation:</strong> ${res.session.title || "Voice Consultation"}`;
+      $("resumeTime").textContent = `Saved ${formatRelativeTime(res.session.updated_at)}`;
+      const preview = res.session.last_prompt ||
+        (res.messages && res.messages.length ? res.messages[res.messages.length - 1].text : "Saved checkpoint ready.");
+      $("resumePreview").textContent = preview;
+    } else {
+      $("voiceResumeCard").style.display = "none";
+    }
+  } catch (err) {
+    console.warn("Could not check last voice session:", err);
+  }
+}
+
+// Resume from last saved point button
+$("btnResumeVoice").onclick = () => {
+  if (!lastSavedVoiceSession) return;
+  const { session, messages } = lastSavedVoiceSession;
+  currentVoiceSessionId = session.id;
+
+  $("voiceResumeCard").style.display = "none";
+  $("voiceConversation").style.display = "block";
+  $("convBadge").textContent = "Resumed";
+  $("voiceTimeline").innerHTML = "";
+
+  // Render all previous messages
+  if (messages && messages.length) {
+    messages.forEach((m) => renderMessage(m));
+  }
+
+  // Show checkpoint marker
+  $("voiceResumeMarker").style.display = "flex";
+
+  // Prompt user and play last assistant response / continuation
+  const resumeSpoken = hi()
+    ? `पिछली बातचीत से जारी कर रहे हैं। ${session.last_prompt || "कृपया आगे बताएं।"}`
+    : `Resuming conversation from last point. ${session.last_prompt || "How can I help you proceed?"}`;
+
+  $("vmsg").textContent = hi()
+    ? "पिछली बातचीत फिर से शुरू हुई। बोलें या टाइप करें।"
+    : "Resumed previous session from last saved point. Speak or type to continue.";
+
+  say(resumeSpoken, $("vl").value);
+  $("voiceConversation").scrollIntoView({ behavior: "smooth", block: "center" });
+};
+
+// Dismiss / Start fresh button on banner
+$("btnDismissResume").onclick = async () => {
+  try {
+    await api("/api/voice/session/clear", {
+      method: "POST",
+      body: JSON.stringify({ session_id: lastSavedVoiceSession ? lastSavedVoiceSession.session.id : "" }),
+    });
+  } catch {}
+  lastSavedVoiceSession = null;
+  currentVoiceSessionId = null;
+  $("voiceResumeCard").style.display = "none";
+  toast("Cleared previous checkpoint. Ready for a new conversation.");
+};
+
+// Start new session inside the conversation card
+$("btnClearVoice").onclick = async () => {
+  try {
+    await api("/api/voice/session/clear", {
+      method: "POST",
+      body: JSON.stringify({ session_id: currentVoiceSessionId || "" }),
+    });
+  } catch {}
+  currentVoiceSessionId = null;
+  lastSavedVoiceSession = null;
+  $("voiceTimeline").innerHTML = "";
+  $("voiceResumeMarker").style.display = "none";
+  $("voiceConversation").style.display = "none";
+  $("convBadge").textContent = "Active";
+  toast("Started fresh voice session");
+};
+
+// Explicit Save Checkpoint button
+$("btnSavePoint").onclick = () => {
+  if (!currentVoiceSessionId) {
+    toast("No active conversation to save yet.");
+    return;
+  }
+  toast("Checkpoint saved! You can resume anytime.");
+};
+
+// Check for previous session on startup
+checkLastVoiceSession();
+
 let cd;
-function handle(t) {
+async function handle(t) {
+  const lang = $("vl").value;
+  $("voiceConversation").style.display = "block";
+
+  // Ensure active session in backend
+  if (!currentVoiceSessionId) {
+    try {
+      const s = await api("/api/voice/session", {
+        method: "POST",
+        body: JSON.stringify({ title: t.slice(0, 40) }),
+      });
+      if (s && s.session_id) currentVoiceSessionId = s.session_id;
+    } catch {
+      currentVoiceSessionId = `VS-${Date.now()}`;
+    }
+  }
+
+  // 1. Record & render user spoken message
+  const userMsg = {
+    session_id: currentVoiceSessionId,
+    sender: "user",
+    text: t,
+    lang,
+    created_at: new Date().toISOString(),
+  };
+  renderMessage(userMsg);
+  api("/api/voice/message", {
+    method: "POST",
+    body: JSON.stringify(userMsg),
+  }).catch(() => {});
+
+  // 2. Generate assistant response
+  const replyText = getAssistantReply(t, lang);
+  const assistantMsg = {
+    session_id: currentVoiceSessionId,
+    sender: "assistant",
+    text: replyText,
+    lang,
+    created_at: new Date().toISOString(),
+  };
+  renderMessage(assistantMsg);
+  api("/api/voice/message", {
+    method: "POST",
+    body: JSON.stringify(assistantMsg),
+  }).catch(() => {});
+
+  // 3. Speak assistant reply
+  say(replyText, lang);
+
+  // 4. Emergency classification & confirmation popup
   const c = classify(t),
     box = $("confirm");
   if (!c) {
-    $("vmsg").textContent =
-      "Not sure what you need. Say “ambulance” or “doctor”, or tap a button.";
+    $("vmsg").textContent = hi()
+      ? "अपनी समस्या बताएं या नीचे दिए गए बटनों पर टैप करें।"
+      : "Describe your symptoms or tap a quick button below.";
     return;
   }
   let n = 5;

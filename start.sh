@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 # Start GramCare AI website
 # Compiles the C server and launches the site at http://localhost:8080
 
@@ -16,7 +16,7 @@ fi
 
 # Compile the server
 echo "Compiling server.c..."
-gcc server.c -o gramcare -lsqlite3 -lpthread -lm -ldl
+gcc server.c -o gramcare
 
 # Remove any stale database so a new user starts fresh
 rm -f gramcare.db

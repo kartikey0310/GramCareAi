@@ -768,3 +768,274 @@ kbd {
 .av.ph {
   background: linear-gradient(135deg, #8b4513, #c87a4a);
 }
+
+/* ==========================================================================
+   Voice Conversation, Playback & Resume Styles (Coffee & Parchment Theme)
+   ========================================================================== */
+
+.btn.small {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+/* Resume Prompt Card */
+.voice-resume-card {
+  max-width: 680px;
+  margin: 18px auto 26px;
+  padding: 18px 22px;
+  background: #fcf8f0;
+  border: 2px dashed #bfa588;
+  border-radius: 18px;
+  text-align: left;
+  box-shadow: 0 10px 30px rgba(111, 78, 55, 0.12);
+  animation: fadeInDown 0.35s ease-out;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.resume-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.resume-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ecdcc3;
+  color: var(--pri);
+  font-weight: 800;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+}
+
+.resume-time {
+  font-size: 12px;
+  color: var(--mut);
+}
+
+.resume-body {
+  margin-bottom: 14px;
+}
+
+.resume-topic {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.resume-quote {
+  background: #f4ecdc;
+  border-left: 4px solid var(--pri);
+  padding: 10px 14px;
+  border-radius: 0 10px 10px 0;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.resume-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* Voice Conversation Timeline Card */
+.voice-conv-card {
+  max-width: 760px;
+  margin: 22px auto;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 12px 36px rgba(59, 46, 39, 0.1);
+}
+
+.conv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--bd);
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.conv-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.conv-icon {
+  font-size: 24px;
+}
+
+.conv-title strong {
+  font-size: 16px;
+  color: var(--ink);
+  display: block;
+}
+
+.conv-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Checkpoint Marker Divider */
+.checkpoint-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 14px 0;
+  position: relative;
+}
+
+.checkpoint-marker::before,
+.checkpoint-marker::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #bfa588;
+}
+
+.checkpoint-marker span {
+  padding: 4px 14px;
+  background: #ebd8c0;
+  color: var(--pri);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px dashed var(--pri);
+}
+
+/* Timeline Message Area */
+.voice-timeline {
+  max-height: 380px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 10px 4px 10px 0;
+  scroll-behavior: smooth;
+}
+
+.conv-msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 82%;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.conv-msg.user {
+  align-self: flex-end;
+}
+
+.conv-msg.assistant {
+  align-self: flex-start;
+}
+
+.conv-msg-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--mut);
+}
+
+.conv-msg.user .conv-msg-header {
+  justify-content: flex-end;
+}
+
+.conv-sender {
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.conv-bubble {
+  position: relative;
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 15px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.conv-msg.user .conv-bubble {
+  background: linear-gradient(135deg, #6f4e37, #5a3d2b);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 4px 12px rgba(111, 78, 55, 0.2);
+}
+
+.conv-msg.assistant .conv-bubble {
+  background: #f2e6d4;
+  color: var(--ink);
+  border: 1px solid var(--bd);
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 4px 12px rgba(59, 46, 39, 0.06);
+}
+
+/* Speech Playback Replay Button */
+.btn-replay-audio {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid var(--bd);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.conv-msg.user .btn-replay-audio {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-replay-audio:hover {
+  background: var(--card);
+  transform: translateY(-1px);
+}
+
+.conv-hint {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--bd);
+  text-align: center;
+  color: var(--mut);
+}
