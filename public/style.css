@@ -198,6 +198,7 @@ h2 {
   border: 1px solid var(--bd);
   border-radius: 14px;
   margin-top: 15px;
+  padding: 16px;
 }
 table {
   width: 100%;
