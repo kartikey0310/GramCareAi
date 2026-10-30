@@ -712,8 +712,14 @@ body.off #offbar {
 .med {
   text-align: center;
 }
-.med > div:first-child {
-  font-size: 38px;
+.vitals-issues {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--mut);
+}
+.vitals-issues li {
+  margin: 3px 0;
 }
 kbd {
   background: var(--card);
