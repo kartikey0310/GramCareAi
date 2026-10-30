@@ -153,6 +153,10 @@ section {
 h2 {
   font-size: 30px;
   color: var(--ink);
+  border-bottom: 2px solid var(--bd);
+  padding-bottom: 10px;
+  margin-bottom: 24px;
+  display: inline-block;
 }
 .form {
   display: grid;
@@ -734,6 +738,12 @@ kbd {
   color: var(--pri);
   text-decoration: none;
   font-size: 18px;
+}
+.section-divider {
+  border: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--bd), transparent);
+  margin: 40px 0;
 }
 .av {
   width: 72px;
