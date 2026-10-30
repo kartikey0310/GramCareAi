@@ -30,6 +30,12 @@ A browser-based healthcare access tool backed by a portable C HTTP server (`serv
 **Primary: Operate** — visitors complete tasks (request help, check vitals, register patients, browse store). Scanability, consistency, native affordances, and real-world usage (rural, low connectivity) outrank expression.  
 **Secondary: Persuade** — the hero section earns trust and action ("Say what's wrong. We'll send help.").
 
+## How to start
+- **Linux/macOS:** `./start.sh` (compiles `server.c`, starts SQLite server, opens `http://localhost:8080`)
+- **Windows:** `start.bat` (compiles `server.c`, starts SQLite server, opens `http://localhost:8080`)
+- **Manual:** `gcc server.c -o gramcare -lsqlite3 -lpthread -lm -ldl && ./gramcare`
+
+
 ## Current design direction (this session)
 - Palette: coffee stained ivory, warm parchment, dark espresso, roasted coffee, faded bronze, soft cream
 - Vibe: old school, warm, grounded, trustworthy — parchment-and-ink aesthetic appropriate for rural healthcare
