@@ -28,6 +28,8 @@ typedef int sock_t;
 #define MAX_VITALS 500
 #define MAX_ALERTS 200
 #define MAX_MEDICINES 50
+#define MAX_VOICE_SESSIONS 100
+#define MAX_VOICE_MESSAGES 1000
 
 typedef struct { char id[20], name[80], village[80], mobile[20], flag[16]; int age; } Patient;
 static Patient patients[MAX_PATIENTS]; static int patient_count=0;
@@ -40,6 +42,58 @@ static Alert alerts[MAX_ALERTS]; static int alert_count=0;
 
 typedef struct { char name[80], category[60]; int price; int rx; } Medicine;
 static Medicine medicines[MAX_MEDICINES]; static int medicine_count=0;
+
+typedef struct {
+    char id[64];
+    char title[128];
+    char status[32];
+    char last_prompt[1024];
+    char created_at[64];
+    char updated_at[64];
+} VoiceSession;
+static VoiceSession voice_sessions[MAX_VOICE_SESSIONS];
+static int voice_session_count=0;
+
+typedef struct {
+    int id;
+    char session_id[64];
+    char sender[32];
+    char text[2048];
+    char lang[32];
+    char created_at[64];
+} VoiceMessage;
+static VoiceMessage voice_messages[MAX_VOICE_MESSAGES];
+static int voice_message_count=0;
+
+static void get_iso_time(char*out,size_t n){
+    time_t now=time(NULL);
+    struct tm*tm_info=gmtime(&now);
+    strftime(out,n,"%Y-%m-%dT%H:%M:%SZ",tm_info);
+}
+
+static void json_escape(const char*in, char*out, size_t max_len){
+    if(!in){if(max_len>0)out[0]=0; return;}
+    size_t j=0;
+    for(size_t i=0; in[i] && j+2 < max_len; i++){
+        unsigned char c = (unsigned char)in[i];
+        if(c == '\"'){
+            out[j++] = '\\'; out[j++] = '\"';
+        } else if(c == '\\'){
+            out[j++] = '\\'; out[j++] = '\\';
+        } else if(c == '\n'){
+            out[j++] = '\\'; out[j++] = 'n';
+        } else if(c == '\r'){
+            out[j++] = '\\'; out[j++] = 'r';
+        } else if(c == '\t'){
+            out[j++] = '\\'; out[j++] = 't';
+        } else if(c < 32){
+            /* skip unprintable control characters */
+        } else {
+            out[j++] = (char)c;
+        }
+    }
+    out[j] = 0;
+}
 
 static void seed_medicines(void){
     Medicine m[]={
@@ -104,6 +158,19 @@ static void serve(sock_t c,const char*u){
 
 static void api(sock_t c,const char*method,const char*path,const char*body){
     char out[BUF];
+
+    /* ---- OPTIONS preflight ---- */
+    if(!strcmp(method,"OPTIONS")){
+        char h[512];
+        snprintf(h,sizeof h,
+            "HTTP/1.1 204 No Content\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+            "Access-Control-Allow-Headers: Content-Type\r\n"
+            "Connection: close\r\n\r\n");
+        send(c,h,(int)strlen(h),0);
+        return;
+    }
 
     if(!strcmp(path,"/api/health")){
         send_resp(c,200,"application/json","{\"ok\":true,\"name\":\"GramCare AI\"}");
@@ -197,6 +264,156 @@ static void api(sock_t c,const char*method,const char*path,const char*body){
             "\"responder\":\"Nearest on-duty doctor / ASHA\",\"eta_min\":8}",
             a->id,name,problem);
         send_resp(c,200,"application/json",out);
+        return;
+    }
+
+    /* ---- Voice session: get latest active session with messages ---- */
+    if(!strcmp(path,"/api/voice/session/latest")&&!strcmp(method,"GET")){
+        int latest_idx = -1;
+        for(int i = voice_session_count - 1; i >= 0; i--){
+            if(!strcmp(voice_sessions[i].status, "active")){
+                int has_msg = 0;
+                for(int m = 0; m < voice_message_count; m++){
+                    if(!strcmp(voice_messages[m].session_id, voice_sessions[i].id)){
+                        has_msg = 1;
+                        break;
+                    }
+                }
+                if(has_msg){
+                    latest_idx = i;
+                    break;
+                }
+            }
+        }
+        if(latest_idx < 0){
+            send_resp(c,200,"application/json","{\"has_session\":false}");
+            return;
+        }
+        VoiceSession*s = &voice_sessions[latest_idx];
+        char esc_title[256], esc_prompt[2048];
+        json_escape(s->title, esc_title, sizeof esc_title);
+        json_escape(s->last_prompt, esc_prompt, sizeof esc_prompt);
+
+        size_t o = 0;
+        o += snprintf(out+o, sizeof(out)-o,
+            "{\"has_session\":true,\"session\":{\"id\":\"%s\",\"title\":\"%s\",\"status\":\"%s\",\"last_prompt\":\"%s\",\"created_at\":\"%s\",\"updated_at\":\"%s\"},\"messages\":[",
+            s->id, esc_title, s->status, esc_prompt, s->created_at, s->updated_at);
+
+        int first = 1;
+        for(int m = 0; m < voice_message_count && o + 2048 < sizeof(out); m++){
+            if(!strcmp(voice_messages[m].session_id, s->id)){
+                if(!first) o += snprintf(out+o, sizeof(out)-o, ",");
+                first = 0;
+                char esc_t[2048];
+                json_escape(voice_messages[m].text, esc_t, sizeof esc_t);
+                o += snprintf(out+o, sizeof(out)-o,
+                    "{\"id\":%d,\"sender\":\"%s\",\"text\":\"%s\",\"lang\":\"%s\",\"created_at\":\"%s\"}",
+                    voice_messages[m].id, voice_messages[m].sender, esc_t, voice_messages[m].lang, voice_messages[m].created_at);
+            }
+        }
+        o += snprintf(out+o, sizeof(out)-o, "]}");
+        send_resp(c,200,"application/json",out);
+        return;
+    }
+
+    /* ---- Voice session: create new ---- */
+    if(!strcmp(path,"/api/voice/session")&&!strcmp(method,"POST")){
+        for(int i = 0; i < voice_session_count; i++){
+            if(!strcmp(voice_sessions[i].status, "active")){
+                strcpy(voice_sessions[i].status, "completed");
+            }
+        }
+        if(voice_session_count >= MAX_VOICE_SESSIONS){
+            memmove(&voice_sessions[0], &voice_sessions[1], sizeof(VoiceSession) * (MAX_VOICE_SESSIONS - 1));
+            voice_session_count = MAX_VOICE_SESSIONS - 1;
+        }
+        VoiceSession*s = &voice_sessions[voice_session_count++];
+        snprintf(s->id, sizeof s->id, "VS-%ld", (long)time(NULL));
+        get_str(body, "title", s->title, sizeof s->title);
+        if(strlen(s->title) == 0) strcpy(s->title, "Voice Health Consultation");
+        strcpy(s->status, "active");
+        strcpy(s->last_prompt, "");
+        get_iso_time(s->created_at, sizeof s->created_at);
+        strcpy(s->updated_at, s->created_at);
+
+        char esc_title[256];
+        json_escape(s->title, esc_title, sizeof esc_title);
+        snprintf(out, sizeof out, "{\"ok\":true,\"session_id\":\"%s\",\"title\":\"%s\"}", s->id, esc_title);
+        send_resp(c,200,"application/json",out);
+        return;
+    }
+
+    /* ---- Voice message: append ---- */
+    if(!strcmp(path,"/api/voice/message")&&!strcmp(method,"POST")){
+        char sid[64]={0}, sender[32]={0}, text[2048]={0}, lang[32]={0};
+        get_str(body,"session_id",sid,sizeof sid);
+        get_str(body,"sender",sender,sizeof sender);
+        get_str(body,"text",text,sizeof text);
+        get_str(body,"lang",lang,sizeof lang);
+        if(strlen(lang)==0) strcpy(lang,"en-IN");
+        if(strlen(sid)==0 || strlen(text)==0){
+            send_resp(c,400,"application/json","{\"error\":\"Missing session_id or text\"}");
+            return;
+        }
+        VoiceSession*target_s = NULL;
+        for(int i = 0; i < voice_session_count; i++){
+            if(!strcmp(voice_sessions[i].id, sid)){
+                target_s = &voice_sessions[i];
+                break;
+            }
+        }
+        if(!target_s){
+            if(voice_session_count >= MAX_VOICE_SESSIONS){
+                memmove(&voice_sessions[0], &voice_sessions[1], sizeof(VoiceSession) * (MAX_VOICE_SESSIONS - 1));
+                voice_session_count = MAX_VOICE_SESSIONS - 1;
+            }
+            target_s = &voice_sessions[voice_session_count++];
+            strcpy(target_s->id, sid);
+            strcpy(target_s->title, "Voice Health Consultation");
+            strcpy(target_s->status, "active");
+            strcpy(target_s->last_prompt, text);
+            get_iso_time(target_s->created_at, sizeof target_s->created_at);
+            strcpy(target_s->updated_at, target_s->created_at);
+        } else {
+            get_iso_time(target_s->updated_at, sizeof target_s->updated_at);
+            if(!strcmp(sender, "assistant")){
+                strncpy(target_s->last_prompt, text, sizeof(target_s->last_prompt)-1);
+            }
+        }
+        if(voice_message_count >= MAX_VOICE_MESSAGES){
+            memmove(&voice_messages[0], &voice_messages[1], sizeof(VoiceMessage) * (MAX_VOICE_MESSAGES - 1));
+            voice_message_count = MAX_VOICE_MESSAGES - 1;
+        }
+        VoiceMessage*m = &voice_messages[voice_message_count++];
+        m->id = voice_message_count;
+        strcpy(m->session_id, sid);
+        strcpy(m->sender, sender);
+        strncpy(m->text, text, sizeof(m->text)-1);
+        strcpy(m->lang, lang);
+        get_iso_time(m->created_at, sizeof m->created_at);
+
+        send_resp(c,200,"application/json","{\"ok\":true}");
+        return;
+    }
+
+    /* ---- Voice session: clear / complete ---- */
+    if(!strcmp(path,"/api/voice/session/clear")&&!strcmp(method,"POST")){
+        char sid[64]={0};
+        get_str(body,"session_id",sid,sizeof sid);
+        for(int i = 0; i < voice_session_count; i++){
+            if(strlen(sid) > 0){
+                if(!strcmp(voice_sessions[i].id, sid)){
+                    strcpy(voice_sessions[i].status, "completed");
+                    get_iso_time(voice_sessions[i].updated_at, sizeof voice_sessions[i].updated_at);
+                }
+            } else {
+                if(!strcmp(voice_sessions[i].status, "active")){
+                    strcpy(voice_sessions[i].status, "completed");
+                    get_iso_time(voice_sessions[i].updated_at, sizeof voice_sessions[i].updated_at);
+                }
+            }
+        }
+        send_resp(c,200,"application/json","{\"ok\":true}");
         return;
     }
 
