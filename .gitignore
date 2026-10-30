@@ -3,3 +3,12 @@ gramcare
 gramcare.exe
 *.exe
 *.o
+
+# Node.js
+node_modules/
+
+# Environment
+.env
+
+# OS
+.DS_Store
