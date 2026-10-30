@@ -6,6 +6,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
+const { GoogleGenAI } = require('@google/genai');
+
 const app = express();
 
 // CORS (server.c set Access-Control-Allow-Origin: * on every response)
@@ -33,6 +35,100 @@ function edge(hr, sp, tp) {
   if (sp < 94 || hr > 100 || hr < 55 || tp >= 38) return 'REVIEW';
   return 'NORMAL';
 }
+
+// ---------------------------------------------------------------------------
+// Gemma 4 client (server-side only — API key never reaches frontend)
+// ---------------------------------------------------------------------------
+let geminiClient = null;
+function getGeminiClient() {
+  if (!geminiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY is not set');
+    }
+    geminiClient = new GoogleGenAI({ apiKey });
+  }
+  return geminiClient;
+}
+
+// Bounded retry for transient Google API errors (500, 503, 429).
+// Never retries 400/401/403/404.
+const RETRYABLE_STATUS = new Set([429, 500, 503]);
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function generateWithRetry(ai, params) {
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (err) {
+      lastErr = err;
+      const status = err.code || err.status || 0;
+      if (!RETRYABLE_STATUS.has(status) || attempt === MAX_RETRIES) {
+        throw err;
+      }
+      const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+      console.warn(`Gemma transient error (${status}), retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
+}
+
+// Gemma 4 model via the Gemini API.
+// gemma-4-31b-it returns HTTP 500 on generateContent for this project;
+// gemma-4-26b-a4b-it is confirmed accessible and working.
+const GEMMA_MODEL = 'gemma-4-26b-a4b-it';
+
+// ---------------------------------------------------------------------------
+// Server-side rate limiter for /api/gemma (prevents unbounded API costs)
+// ---------------------------------------------------------------------------
+const GEMMA_RATE_LIMIT = {};
+const GEMMA_MAX_REQUESTS = 15; // per window per IP
+const GEMMA_WINDOW_MS = 60000; // 1 minute
+
+function checkGemmaRateLimit(ip) {
+  const now = Date.now();
+  const entry = GEMMA_RATE_LIMIT[ip] || { count: 0, resetAt: now + GEMMA_WINDOW_MS };
+  if (now > entry.resetAt) {
+    entry.count = 0;
+    entry.resetAt = now + GEMMA_WINDOW_MS;
+  }
+  entry.count += 1;
+  GEMMA_RATE_LIMIT[ip] = entry;
+  return entry.count <= GEMMA_MAX_REQUESTS;
+}
+
+// Clean up stale rate-limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const ip of Object.keys(GEMMA_RATE_LIMIT)) {
+    if (now > GEMMA_RATE_LIMIT[ip].resetAt) {
+      delete GEMMA_RATE_LIMIT[ip];
+    }
+  }
+}, 300000);
+
+const HEALTHCARE_SYSTEM_INSTRUCTION = `You are GramCare AI, an educational rural-healthcare prototype.
+Provide general educational health information only.
+Never claim to diagnose the user.
+Never claim to replace a doctor.
+Avoid presenting uncertain medical information as fact.
+Recommend appropriate professional medical care when necessary.
+Keep responses concise and easy to understand.
+Be suitable for users who may have limited medical knowledge.
+Respond in the language used by the user when practical (English or Hindi/Hinglish).
+For potentially urgent symptoms such as severe chest pain, severe difficulty breathing,
+unconsciousness, severe bleeding, signs of stroke, serious accident/injury, or other
+obvious emergencies, clearly recommend seeking immediate emergency medical assistance
+rather than relying on the AI.
+Do not imply that GramCare has actually contacted an ambulance, doctor, ASHA worker,
+hospital, or emergency service.`;
 
 // ---------------------------------------------------------------------------
 // API routes (exact frontend contracts preserved)
@@ -109,6 +205,63 @@ app.post('/api/emergency', (req, res) => {
   });
 });
 
+app.post('/api/gemma', async (req, res) => {
+  // ---- Rate limit (server-side only, prevents unbounded API costs) ----
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  if (!checkGemmaRateLimit(ip)) {
+    return res.status(429).json({
+      ok: false,
+      error: 'AI rate limit exceeded. Please try again later.',
+    });
+  }
+
+  try {
+    const { message } = req.body;
+
+    // ---- Input validation ----
+    if (message === undefined || message === null) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    if (typeof message !== 'string') {
+      return res.status(400).json({ error: 'Message must be a string' });
+    }
+    if (!message.trim()) {
+      return res.status(400).json({ error: 'Message must not be empty' });
+    }
+    if (message.length > 2000) {
+      return res.status(400).json({ error: 'Message must not exceed 2000 characters' });
+    }
+
+    // ---- API key check (server-side only) ----
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ ok: false, error: 'AI service is temporarily unavailable.' });
+    }
+
+    // ---- Call Gemma 4 via Gemini API ----
+    const ai = getGeminiClient();
+    const response = await generateWithRetry(ai, {
+      model: GEMMA_MODEL,
+      contents: message,
+      config: {
+        systemInstruction: HEALTHCARE_SYSTEM_INSTRUCTION,
+      },
+    });
+
+    const responseText = response.text || '';
+
+    res.json({
+      ok: true,
+      model: GEMMA_MODEL,
+      response: responseText,
+      disclaimer: 'Educational information only — not a diagnosis or replacement for professional medical care.',
+    });
+  } catch (err) {
+    // Log only safe debugging information (no keys, no stack traces)
+    console.error('Gemma API error:', err.message || 'Unknown error');
+    res.status(503).json({ ok: false, error: 'AI service is temporarily unavailable.' });
+  }
+});
+
 // Unmatched API routes -> 404 JSON (mirrors server.c)
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'Unknown API route' });
@@ -128,6 +281,11 @@ app.get('*', (req, res) => {
 // Start server
 // ---------------------------------------------------------------------------
 const PORT = process.env.PORT || 8080;
+
+if (!process.env.GEMINI_API_KEY) {
+  console.warn('WARNING: GEMINI_API_KEY is not set. /api/gemma will be unavailable.');
+}
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`GramCare Node.js server: http://localhost:${PORT}`);
   console.log('Press Ctrl+C to stop.');
