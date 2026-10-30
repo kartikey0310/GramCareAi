@@ -32,7 +32,7 @@ typedef int sock_t;
 typedef struct { char id[20], name[80], village[80], mobile[20], flag[16]; int age; } Patient;
 static Patient patients[MAX_PATIENTS]; static int patient_count=0;
 
-typedef struct { int id; int hr, spo2; double temp; char flag[16], message[120]; } Vitals;
+typedef struct { int id; int hr, spo2; double temp; char flag[16], message[300], issues[300]; } Vitals;
 static Vitals vitals[MAX_VITALS]; static int vitals_count=0;
 
 typedef struct { char id[32], name[80], problem[120], status[16], responder[80]; int eta_min; } Alert;
@@ -56,11 +56,27 @@ static int get_num(const char*b,const char*k,int def){char pat[80],*p;snprintf(p
 static double get_double(const char*b,const char*k,double def){char pat[80],*p;snprintf(pat,sizeof pat,"\"%s\":",k);p=strstr(b,pat);return p?atof(p+strlen(pat)):def;}
 static void get_str(const char*b,const char*k,char*out,size_t n){char pat[80],*p,*e;out[0]=0;snprintf(pat,sizeof pat,"\"%s\":\"",k);p=strstr(b,pat);if(!p)return;p+=strlen(pat);e=strchr(p,'\"');if(!e)return;size_t z=(size_t)(e-p);if(z>=n)z=n-1;memcpy(out,p,z);out[z]=0;}
 
-static const char* edge(double hr,double sp,double tp){
-    if(hr<30||hr>220||sp<50||sp>100||tp<30||tp>45)return "INVALID";
-    if(sp<90||hr>130||hr<45||tp>=39.5)return "URGENT";
-    if(sp<94||hr>100||hr<55||tp>=38)return "REVIEW";
-    return "NORMAL";
+static void assess_vitals(double hr,double sp,double tp,char*flag,char*msg,char*issues){
+    strcpy(flag,"NORMAL"); strcpy(msg,"All vitals within normal range"); strcpy(issues,"");
+    int urgent=0, review=0;
+    char tmp[200]="";
+
+    if(hr<30||hr>220||sp<50||sp>100||tp<30||tp>45){
+        strcpy(flag,"INVALID"); strcpy(msg,"Re-check the measurement"); strcpy(issues,"Invalid reading");
+        return;
+    }
+    if(hr<60){sprintf(tmp+strlen(tmp),"%sBradycardia (low heart rate)",strlen(tmp)?" · ":""); review=1;}
+    else if(hr>100){sprintf(tmp+strlen(tmp),"%sTachycardia (high heart rate)",strlen(tmp)?" · ":""); review=1;}
+    if(sp<90){sprintf(tmp+strlen(tmp),"%sSevere hypoxemia (very low SpO₂)",strlen(tmp)?" · ":""); urgent=1;}
+    else if(sp<94){sprintf(tmp+strlen(tmp),"%sLow SpO₂",strlen(tmp)?" · ":""); review=1;}
+    if(tp<35){sprintf(tmp+strlen(tmp),"%sHypothermia (low temperature)",strlen(tmp)?" · ":""); urgent=1;}
+    else if(tp>=39.5){sprintf(tmp+strlen(tmp),"%sHyperpyrexia (very high fever)",strlen(tmp)?" · ":""); urgent=1;}
+    else if(tp>=38){sprintf(tmp+strlen(tmp),"%sFever",strlen(tmp)?" · ":""); review=1;}
+
+    if(urgent){strcpy(flag,"URGENT"); strcpy(msg,tmp);}
+    else if(review){strcpy(flag,"REVIEW"); strcpy(msg,tmp);}
+    else {strcpy(flag,"NORMAL"); strcpy(msg,"All vitals within normal range");}
+    strcpy(issues,tmp);
 }
 
 static const char* mime(const char*p){const char*e=strrchr(p,'.');if(!e)return "text/plain";if(!strcmp(e,".html"))return "text/html; charset=utf-8";if(!strcmp(e,".css"))return "text/css";if(!strcmp(e,".js"))return "application/javascript";if(!strcmp(e,".json"))return "application/json";if(!strcmp(e,".svg"))return "image/svg+xml";return "application/octet-stream";}
@@ -90,21 +106,21 @@ static void api(sock_t c,const char*method,const char*path,const char*body){
     char out[BUF];
 
     if(!strcmp(path,"/api/health")){
-        send_resp(c,200,"application/json","{\"ok\":true,\"backend\":\"C\",\"name\":\"GramCare AI\"}");
+        send_resp(c,200,"application/json","{\"ok\":true,\"name\":\"GramCare AI\"}");
         return;
     }
 
     /* ---- Vitals ---- */
     if(!strcmp(path,"/api/vitals")&&!strcmp(method,"POST")){
         double hr=get_double(body,"hr",0),sp=get_double(body,"spo2",0),tp=get_double(body,"temp",0);
-        const char*f=edge(hr,sp,tp);
-        const char*msg=!strcmp(f,"INVALID")?"Re-check the measurement":"Attention flag only - not a diagnosis";
+        char flag[16],msg[300],issues[300];
+        assess_vitals(hr,sp,tp,flag,msg,issues);
         if(vitals_count<MAX_VITALS){
             Vitals*v=&vitals[vitals_count++];
             v->id=vitals_count; v->hr=(int)hr; v->spo2=(int)sp; v->temp=tp;
-            strcpy(v->flag,f); strcpy(v->message,msg);
+            strcpy(v->flag,flag); strcpy(v->message,msg); strcpy(v->issues,issues);
         }
-        snprintf(out,sizeof out,"{\"flag\":\"%s\",\"message\":\"%s\"}",f,msg);
+        snprintf(out,sizeof out,"{\"flag\":\"%s\",\"message\":\"%s\",\"issues\":\"%s\"}",flag,msg,issues);
         send_resp(c,200,"application/json",out);
         return;
     }
@@ -193,7 +209,7 @@ int main(void){
     a.sin_family=AF_INET;a.sin_addr.s_addr=htonl(INADDR_ANY);a.sin_port=htons(PORT);
     if(bind(s,(struct sockaddr*)&a,sizeof a)==SOCKET_ERROR){perror("bind");return 1;}
     listen(s,16);
-    printf("GramCare C server: http://localhost:%d\n",PORT);
+    printf("GramCare server: http://localhost:%d\n",PORT);
     printf("No demo patients - ready for new user\n");
     printf("Press Ctrl+C to stop.\n");
     for(;;){
