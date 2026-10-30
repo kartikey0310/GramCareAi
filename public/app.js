@@ -481,7 +481,7 @@ setInterval(
     }),
   1000,
 );
-/* vitals: on-device check mirrors the C rules, so it works offline */
+/* vitals: on-device check uses clinical thresholds, works offline */
 const edge = (h, s, t) =>
   h < 30 || h > 220 || s < 50 || s > 100 || t < 30 || t > 45
     ? "INVALID"
