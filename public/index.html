@@ -43,6 +43,23 @@
           request is saved on this phone and sent the moment the network is
           back.
         </p>
+
+        <!-- Voice Resume Card (shown when last saved point is detected) -->
+        <div id="voiceResumeCard" class="card voice-resume-card" style="display:none;">
+          <div class="resume-header">
+            <span class="resume-pill">⏸️ Saved Conversation Point</span>
+            <span id="resumeTime" class="resume-time"></span>
+          </div>
+          <div class="resume-body">
+            <p class="resume-topic" id="resumeTopic"><strong>Previous conversation ready to resume:</strong></p>
+            <div class="resume-quote" id="resumePreview"></div>
+          </div>
+          <div class="resume-actions">
+            <button class="btn" id="btnResumeVoice">▶ Resume from Last Point</button>
+            <button class="btn alt" id="btnDismissResume">Start Fresh</button>
+          </div>
+        </div>
+
         <div class="mic-wrap">
           <button id="mic" aria-label="Speak for help">
             <span>🎙️</span><i></i><i></i><i></i><i></i><i></i>
@@ -63,6 +80,31 @@
           Try saying: “I need an ambulance, chest pain”. Press V to talk.
         </p>
         <p id="heard" class="heard"></p>
+
+        <!-- Voice Conversation Timeline & Playback Log -->
+        <div id="voiceConversation" class="card voice-conv-card" style="display:none;">
+          <div class="conv-header">
+            <div class="conv-title">
+              <span class="conv-icon">🩺</span>
+              <div>
+                <strong>Voice Health Assistant</strong>
+                <span id="convBadge" class="chip">Active</span>
+              </div>
+            </div>
+            <div class="conv-controls">
+              <button class="btn alt small" id="btnSavePoint" title="Save current checkpoint to database">💾 Save Checkpoint</button>
+              <button class="btn alt small" id="btnClearVoice" title="Start a fresh conversation">➕ New Session</button>
+            </div>
+          </div>
+          <div id="voiceResumeMarker" class="checkpoint-marker" style="display:none;">
+            <span>📍 Resumed from last saved point</span>
+          </div>
+          <div id="voiceTimeline" class="voice-timeline" role="log" aria-live="polite"></div>
+          <div id="convHelpHint" class="conv-hint">
+            <small>💡 Tap the 🔊 icon on any message to re-listen to instructions at any time.</small>
+          </div>
+        </div>
+
         <div class="chips">
           <button data-t="ambulance chest pain">🚑 Chest pain</button
           ><button data-t="ambulance difficulty breathing">😮‍💨 Breathing</button
