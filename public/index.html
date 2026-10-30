@@ -25,6 +25,7 @@
         <a href="#patients">Patients</a>
         <a href="#emergency">Emergency</a>
         <a href="#store">Medicine Store</a>
+        <a href="#ai">AI Assistant</a>
         <a href="#about">About</a>
       </nav>
       <span id="net" class="net"></span>
@@ -214,6 +215,34 @@
             >0</span
           >
         </div>
+      </section>
+      <hr class="section-divider" />
+      <section id="ai">
+        <h2>🤖 AI Health Assistant</h2>
+        <div class="warn ai-notice">
+          <strong>Educational information only — not a diagnosis or replacement for
+          professional medical care.</strong><br />
+          Requires an internet connection (does not work offline). For immediate
+          danger, call <a href="tel:112">112</a> or <a href="tel:108">108</a>
+          right away. The SOS dispatch and ETA shown elsewhere on this site are
+          <strong>simulated</strong>, not real emergency assistance.
+        </div>
+        <div class="card form ai-form">
+          <label>
+            Ask a health question (English, Hindi, or Hinglish)
+            <textarea
+              id="aiMsg"
+              rows="3"
+              placeholder="e.g., What is a healthy body temperature?"
+              maxlength="2000"
+            ></textarea>
+          </label>
+          <button class="btn" id="aiSend">Ask AI</button>
+          <span id="aiCounter">0 / 2000</span>
+        </div>
+        <div id="aiLoading" class="note" hidden>Thinking…</div>
+        <div id="aiResponse" class="card ai-response" hidden></div>
+        <div id="aiError" class="warn" hidden></div>
       </section>
       <hr class="section-divider" />
       <section id="about">

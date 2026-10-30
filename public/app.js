@@ -593,3 +593,110 @@ $("live").onclick = () => {
   tick();
   liveT = setInterval(tick, 2500);
 };
+
+/* ---- AI Assistant (Gemma 4 via /api/gemma) ----
+   Requires internet; never stores messages or keys locally. ---------------- */
+const AI_MAX_LEN = 2000;
+const AI_TIMEOUT_MS = 30000;
+let aiSending = false;
+
+function aiSetLoading(loading) {
+  aiSending = loading;
+  const btn = $("aiSend");
+  const textarea = $("aiMsg");
+  const loader = $("aiLoading");
+  if (btn) {
+    btn.disabled = loading;
+    btn.textContent = loading ? "Thinking…" : "Ask AI";
+  }
+  if (textarea) textarea.disabled = loading;
+  if (loader) loader.hidden = !loading;
+}
+
+function aiCounter() {
+  const ta = $("aiMsg");
+  const c = $("aiCounter");
+  if (!ta || !c) return;
+  const len = ta.value.length;
+  c.textContent = len + " / " + AI_MAX_LEN;
+  c.style.color = len > AI_MAX_LEN ? "#8b4513" : "var(--mut)";
+}
+
+if ($("aiMsg")) {
+  $("aiMsg").addEventListener("input", aiCounter);
+  aiCounter();
+}
+
+if ($("aiSend")) {
+  $("aiSend").onclick = async () => {
+    if (aiSending) return;
+    const ta = $("aiMsg");
+    const msg = (ta && ta.value) ? ta.value.trim() : "";
+    if (!msg) {
+      ta && ta.focus();
+      return;
+    }
+    if (msg.length > AI_MAX_LEN) {
+      const errEl = $("aiError");
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = "Message too long (max 2000 characters).";
+      }
+      return;
+    }
+
+    aiSetLoading(true);
+    const respEl = $("aiResponse");
+    const errEl = $("aiError");
+    // Clear old results when starting a new request
+    if (respEl) { respEl.hidden = true; respEl.textContent = ""; }
+    if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
+
+    let timer = null;
+    try {
+      const controller = new AbortController();
+      timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+      const r = await fetch("/api/gemma", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg }),
+        signal: controller.signal,
+      });
+      const body = await r.json();
+
+      if (!r.ok || !body.ok) {
+        throw new Error(body.error || "AI service returned an error.");
+      }
+
+      // Preserve new response after completion
+      if (respEl) {
+        respEl.hidden = false;
+        // Safe rendering: use textContent only (never innerHTML for model text)
+        const p = document.createElement("p");
+        p.textContent = body.response || "";
+        respEl.appendChild(p);
+        const dis = document.createElement("p");
+        dis.className = "note";
+        dis.textContent = body.disclaimer || "Educational information only — not a diagnosis.";
+        respEl.appendChild(dis);
+      }
+    } catch (e) {
+      // Preserve new error after completion
+      if (errEl) {
+        errEl.hidden = false;
+        if (e.name === "AbortError") {
+          errEl.textContent = "The AI assistant took too long to respond. Please try again.";
+        } else if (e.message && /rate limit/i.test(e.message)) {
+          errEl.textContent = "AI rate limit exceeded. Please wait a moment and try again.";
+        } else {
+          errEl.textContent =
+            "AI assistant is temporarily unavailable. Please check your internet connection and try again.";
+        }
+      }
+    } finally {
+      // Always clear the pending timeout and reset loading UI
+      if (timer) clearTimeout(timer);
+      aiSetLoading(false);
+    }
+  };
+}

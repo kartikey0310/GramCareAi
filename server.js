@@ -51,8 +51,68 @@ function getGeminiClient() {
   return geminiClient;
 }
 
-// Preferred Gemma 4 model via the Gemini API
-const GEMMA_MODEL = 'gemma-4-31b-it';
+// Bounded retry for transient Google API errors (500, 503, 429).
+// Never retries 400/401/403/404.
+const RETRYABLE_STATUS = new Set([429, 500, 503]);
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function generateWithRetry(ai, params) {
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (err) {
+      lastErr = err;
+      const status = err.code || err.status || 0;
+      if (!RETRYABLE_STATUS.has(status) || attempt === MAX_RETRIES) {
+        throw err;
+      }
+      const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+      console.warn(`Gemma transient error (${status}), retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
+}
+
+// Gemma 4 model via the Gemini API.
+// gemma-4-31b-it returns HTTP 500 on generateContent for this project;
+// gemma-4-26b-a4b-it is confirmed accessible and working.
+const GEMMA_MODEL = 'gemma-4-26b-a4b-it';
+
+// ---------------------------------------------------------------------------
+// Server-side rate limiter for /api/gemma (prevents unbounded API costs)
+// ---------------------------------------------------------------------------
+const GEMMA_RATE_LIMIT = {};
+const GEMMA_MAX_REQUESTS = 15; // per window per IP
+const GEMMA_WINDOW_MS = 60000; // 1 minute
+
+function checkGemmaRateLimit(ip) {
+  const now = Date.now();
+  const entry = GEMMA_RATE_LIMIT[ip] || { count: 0, resetAt: now + GEMMA_WINDOW_MS };
+  if (now > entry.resetAt) {
+    entry.count = 0;
+    entry.resetAt = now + GEMMA_WINDOW_MS;
+  }
+  entry.count += 1;
+  GEMMA_RATE_LIMIT[ip] = entry;
+  return entry.count <= GEMMA_MAX_REQUESTS;
+}
+
+// Clean up stale rate-limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const ip of Object.keys(GEMMA_RATE_LIMIT)) {
+    if (now > GEMMA_RATE_LIMIT[ip].resetAt) {
+      delete GEMMA_RATE_LIMIT[ip];
+    }
+  }
+}, 300000);
 
 const HEALTHCARE_SYSTEM_INSTRUCTION = `You are GramCare AI, an educational rural-healthcare prototype.
 Provide general educational health information only.
@@ -146,6 +206,15 @@ app.post('/api/emergency', (req, res) => {
 });
 
 app.post('/api/gemma', async (req, res) => {
+  // ---- Rate limit (server-side only, prevents unbounded API costs) ----
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  if (!checkGemmaRateLimit(ip)) {
+    return res.status(429).json({
+      ok: false,
+      error: 'AI rate limit exceeded. Please try again later.',
+    });
+  }
+
   try {
     const { message } = req.body;
 
@@ -170,9 +239,12 @@ app.post('/api/gemma', async (req, res) => {
 
     // ---- Call Gemma 4 via Gemini API ----
     const ai = getGeminiClient();
-    const response = await ai.models.generateContent({
+    const response = await generateWithRetry(ai, {
       model: GEMMA_MODEL,
-      contents: HEALTHCARE_SYSTEM_INSTRUCTION + '\n\nUser: ' + message,
+      contents: message,
+      config: {
+        systemInstruction: HEALTHCARE_SYSTEM_INSTRUCTION,
+      },
     });
 
     const responseText = response.text || '';
