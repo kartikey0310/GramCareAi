@@ -153,6 +153,13 @@ static void api(sock_t c,const char*method,const char*path,const char*body){
             send_resp(c,400,"application/json","{\"error\":\"Invalid patient details\"}");
             return;
         }
+        /* Check for duplicate mobile */
+        for(int i=0;i<patient_count;i++){
+            if(strcmp(patients[i].mobile,p->mobile)==0){
+                send_resp(c,400,"application/json","{\"error\":\"Patient with this mobile already exists\"}");
+                return;
+            }
+        }
         snprintf(p->id,sizeof p->id,"GC-%d",1001+patient_count);
         patient_count++;
         snprintf(out,sizeof out,"{\"ok\":true,\"id\":\"%s\"}",p->id);

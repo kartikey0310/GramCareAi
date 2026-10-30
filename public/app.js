@@ -51,8 +51,18 @@ $("addPatient").onclick = async () => {
       mobile: $("pm").value,
     }),
   });
-  $("pmsg").textContent = x.error || `Saved ${x.id}`;
-  if (x.ok) patients();
+  if (x.error) {
+    $("pmsg").textContent = x.error;
+    $("pmsg").style.color = "#d4202c";
+  } else {
+    $("pmsg").textContent = "Saved " + x.id;
+    $("pmsg").style.color = "#2d5a3e";
+    $("pn").value = "";
+    $("pa").value = "";
+    $("pv").value = "";
+    $("pm").value = "";
+    patients();
+  }
 };
 $("sos").onclick = async () => {
   let x = await api("/api/emergency", {
@@ -65,10 +75,11 @@ $("sos").onclick = async () => {
   $("estatus").innerHTML =
     `<h3>${x.status}</h3><p>Case ${x.id} · ${x.responder} · Demo ETA ${x.eta_min} min</p>`;
 };
-let cart = [];
+let cart = JSON.parse(localStorage.getItem("gc_cart") || "[]");
 function drawCart() {
   $("cartCount").textContent = cart.length;
   $("total").textContent = cart.reduce((s, m) => s + m.price, 0);
+  localStorage.setItem("gc_cart", JSON.stringify(cart));
 }
 api("/api/medicines")
   .then(
